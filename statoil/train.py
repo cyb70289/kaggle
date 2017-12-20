@@ -6,7 +6,7 @@ from torch import nn, optim
 from torch.autograd import Variable
 
 from models.densenet import DenseNet
-from utils import TrainDevLoader
+from utils import StatoilTrainLoader
 
 
 _loglevel = (('debug', logging.DEBUG),
@@ -98,9 +98,9 @@ def train(args, model):
         model.cuda()
         loss.cuda()
 
-    Loader = TrainDevLoader(args.train_file, args.batch_size, dev_ratio=0.2,
-                            seed=args.seed)
-    train_loader, dev_loader = Loader()
+    Loader = StatoilTrainLoader(args.train_file, args.batch_size,
+                                dev_ratio=0.2, seed=args.seed)
+    train_loader, dev_loader = next(Loader())
     for i in range(args.max_epochs):
         bceloss_train = train_epoch(args, model, train_loader, loss, optimizer)
         bceloss_dev = validate_epoch(args, model, dev_loader, loss, optimizer)

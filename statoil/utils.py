@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler
-from torchvision import transforms
 from sklearn.model_selection import ShuffleSplit, StratifiedShuffleSplit
 from sklearn.model_selection import KFold, StratifiedKFold
 
@@ -11,50 +10,48 @@ from sklearn.model_selection import KFold, StratifiedKFold
 LOG = logging.getLogger(__name__)
 
 
-class _SubsetSequentialSampler(Sampler):
+class AugImgBase(object):
+    RANDOM = -1
 
-    def __init__(self, indices):
-        self.indices = indices
+    def __init__(self, mode=RANDOM):
+        self.mode = mode
 
-    def __iter__(self):
-        return iter(self.indices)
-
-    def __len__(self):
-        return len(self.indices)
+    def __call__(self, img):
+        raise NotImplementedError
 
 
-class _TransformAugment(object):
+class AugImgFlip(AugImgBase):
+    VERTICAL = 1
+    HORIZONTAL = 2
+    BOTH = 3
 
-    def __init__(self):
-        self.aug_funcs = [getattr(self, f) for f in _TransformAugment.__dict__
-                          if f.startswith('_aug_')]
-        self.aug_funcs = [f for f in self.aug_funcs if callable(f)]
-        LOG.debug('Image augment: {}'.format(
-            [f.__name__ for f in self.aug_funcs]))
-
-    def _aug_flip(self, img):
-        # 0 - no, 1 - vertical, 2 - horizontal, 3 - both
-        i = np.random.randint(0, 4)
-        if i & 1:
+    # img shape: H * W * C
+    def __call__(self, img):
+        mode = self.mode
+        if mode == AugImgBase.RANDOM:
+            mode = np.random.randint(0, 4)
+        if mode & 1:
             img = np.flip(img, 0)
-        if i & 2:
+        if mode & 2:
             img = np.flip(img, 1)
         return img
 
-    def _aug_rot90(self, img):
-        assert(img.shape[0] == img.shape[1])
-        # 0 - 0, 1 - 90, 2 - 180, 3 - 270
-        i = np.random.randint(0, 4)
-        return np.rot90(img, i)
 
+class AugImgRot90(AugImgBase):
+    ROT90 = 1
+    ROT180 = 2
+    ROT270 = 3
+
+    # img shape: H * W * C
     def __call__(self, img):
-        # img shape: H * W * C
-        for aug_func in self.aug_funcs:
-            img = aug_func(img)
-        return img
+        assert(img.shape[0] == img.shape[1])
+        mode = self.mode
+        if mode == AugImgBase.RANDOM:
+            mode = np.random.randint(0, 4)
+        return np.rot90(img, mode)
 
 
-class _TransformToTensor(object):
+class ImgToTensor(object):
 
     def __call__(self, img):
         # H * W * C --> C * H * W
@@ -62,119 +59,145 @@ class _TransformToTensor(object):
         return torch.from_numpy(img.copy())
 
 
-class _TrainDevSplitter(object):
+class StatoilTrainData(Dataset):
+    """ Holds statoil train dataset """
 
-    def __init__(self, labels, seed=None):
-        self.y = labels.squeeze()
-        self.X = np.zeros(len(self.y))
-        self.seed = seed
-
-    def split(self, dev_ratio=0.2, stratified=True):
-        CVClass = StratifiedShuffleSplit if stratified else ShuffleSplit
-        cv = CVClass(test_size=dev_ratio, random_state=self.seed)
-        return next(cv.split(self.X, self.y))
-
-    def kfold(self, folds=5, stratified=True):
-        KFClass = StratifiedKFold if stratified else KFold
-        kf = KFClass(n_splits=folds, shuffle=True, random_state=self.seed)
-        train_indices, dev_indices = [], []
-        for train_index, dev_index in kf.split(self.X, self.y):
-            train_indices.append(train_index)
-            dev_indices.append(dev_index)
-        return train_indices, dev_indices
-
-
-class _TrainDevData(Dataset):
-
-    def __init__(self, train_npz, seed=None, aug=True):
+    def __init__(self, train_npz):
         data = np.load(train_npz)
-        self.imgs = data['img'].astype(np.float32)
-        self.labels = data['y_train'].astype(np.float32)[..., None]
-        self.splitter = _TrainDevSplitter(self.labels, seed)
-        self.transform = _TransformToTensor()
-        if aug:
-            self.transform = transforms.Compose([_TransformAugment(),
-                                                 self.transform])
+        self.X = data['img'].astype(np.float32)
+        self.y = data['y_train'].astype(np.float32)[..., None]
 
     def __len__(self):
-        return len(self.labels)
+        return len(self.X)
 
     def __getitem__(self, idx):
-        img = self.transform(self.imgs[idx])
-        label = self.labels[idx]
-        return (img, label)
+        return self.X[idx], self.y[idx]
 
 
-class _TestData(Dataset):
+class StatoilTestData(Dataset):
+    """ Holds statoil test dataset """
 
-    def __init__(self, test_npz, aug=False):
+    def __init__(self, test_npz):
         data = np.load(test_npz)
-        self.imgs = data['img'].astype(np.float32)
-        self.transform = _TransformToTensor()
-        if aug:
-            self.transform = transforms.Compose([_TransformAugment(),
-                                                 self.transform])
+        self.X = data['img'].astype(np.float32)
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.X)
 
     def __getitem__(self, idx):
-        return self.transform(self.imgs[idx])
+        return self.X[idx], self.y[idx]
 
 
-class TrainDevLoader(object):
+class StatoilDataStride(Dataset):
+    """ Interface to DataLoader. Reindex to actual datasets. """
 
-    def __init__(self, train_npz, batch_size=1, dev_ratio=None, folds=None,
-                 stratified=True, seed=None, n_workers=0, aug=True):
+    def __init__(self, dataset, indices):
+        self.dataset = dataset
+        self.indices = indices
+        self.totensor = ImgToTensor()
+        self.aug = []
+
+    def _set_augment(self, aug):
+        if isinstance(aug, list):
+            self.aug = aug
+        else:
+            self.aug = [aug]
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        X, y = self.dataset[self.indices[idx]]
+        for aug in self.aug:
+            X = aug(X)
+        X = self.totensor(X)
+        return X, y
+
+
+class StatoilTrainSplitter(object):
+    """ Split dataset for train and validation, or cross validataion """
+
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.y = dataset.y.squeeze()
+        self.X = np.zeros(len(self.y))
+
+    def split(self, dev_ratio=0.2, stratified=True, seed=None):
+        CVClass = StratifiedShuffleSplit if stratified else ShuffleSplit
+        cv = CVClass(test_size=dev_ratio, random_state=seed)
+        train_index, dev_index = next(cv.split(self.X, self.y))
+        train_stride = StatoilDataStride(self.dataset, train_index)
+        dev_stride = StatoilDataStride(self.dataset, dev_index)
+        return train_stride, dev_stride
+ 
+    def kfold(self, folds=5, stratified=True, seed=None):
+        KFClass = StratifiedKFold if stratified else KFold
+        kf = KFClass(n_splits=folds, shuffle=True, random_state=seed)
+        for train_index, dev_index in kf.split(self.X, self.y):
+            train_stride = StatoilDataStride(self.dataset, train_index)
+            dev_stride = StatoilDataStride(self.dataset, dev_index)
+            yield train_stride, dev_stride
+
+
+class StatoilTrainLoader(object):
+
+    def __init__(self, train_npz, batch_size=64, dev_ratio=None, folds=None,
+                 stratified=True, seed=None, n_workers=0, train_aug=True):
         if dev_ratio is None and folds is None:
-            raise ValueError('Either "dev_ratio" or "folds" must be set!')
+            raise ValueError('Either "dev_ratio" or "folds" must be set')
         elif dev_ratio and folds:
-            raise ValueError('Cannot set both "dev_ratio" and "folds"!')
+            raise ValueError('Cannot set both "dev_ratio" and "folds"')
         self.batch_size = batch_size
         self.dev_ratio = dev_ratio
         self.folds = folds
         self.stratified = stratified
         self.seed = seed
         self.n_workers = n_workers
-        self.dataset = _TrainDevData(train_npz, seed, aug)
+        self.train_aug = [AugImgFlip(), AugImgRot90()] if train_aug else []
+
+        dataset = StatoilTrainData(train_npz)
+        self.splitter = StatoilTrainSplitter(dataset)
 
     def __call__(self):
         if self.dev_ratio:
             # train test split
-            train_idx, dev_idx = self.dataset.splitter.split(
-                self.dev_ratio, self.stratified)
-            train_loader = DataLoader(self.dataset, batch_size=self.batch_size,
-                                      sampler=SubsetRandomSampler(train_idx),
+            train_stride, dev_stride = self.splitter.split(self.dev_ratio,
+                                                           self.stratified,
+                                                           self.seed)
+            train_stride._set_augment(self.train_aug)
+            train_loader = DataLoader(train_stride, shuffle=True,
+                                      batch_size=self.batch_size,
                                       num_workers=self.n_workers)
-            dev_loader = DataLoader(self.dataset, batch_size=self.batch_size,
-                                    sampler=_SubsetSequentialSampler(dev_idx),
+            dev_loader = DataLoader(dev_stride,
+                                    batch_size=self.batch_size,
                                     num_workers=self.n_workers)
-            return train_loader, dev_loader
+            yield train_loader, dev_loader
         else:
             # kfolds cv
-            train_indices, dev_indices = self.dataset.splitter.kfold(
-                self.folds, self.stratified)
-            loaders = []
-            for i in range(self.folds):
-                train_loader = DataLoader(
-                    self.dataset, batch_size=self.batch_size,
-                    sampler=SubsetRandomSampler(train_indices[i]),
-                    num_workers=self.n_workers)
-                dev_loader = DataLoader(
-                    self.dataset, batch_size=self.batch_size,
-                    sampler=_SubsetSequentialSampler(dev_indices[i]),
-                    num_workers=self.n_workers)
-                loaders.append((train_loader, dev_loader))
-            return loaders
+            strides = self.splitter.kfold(self.folds, self.stratified,
+                                          self.seed)
+            for train_stride, dev_stride in strides:
+                train_stride._set_augment(self.train_aug)
+                train_loader = DataLoader(train_stride, shuffle=True,
+                                          batch_size=self.batch_size,
+                                          num_workers=self.n_workers)
+                dev_loader = DataLoader(dev_stride,
+                                        batch_size=self.batch_size,
+                                        num_workers=self.n_workers)
+                yield train_loader, dev_loader
 
 
-class TestLoader(object):
+class StatoilTestLoader(object):
 
-    def __init__(self, test_npz, batch_size=1, n_workers=0, aug=False):
+    def __init__(self, test_npz, batch_size=64, n_workers=0, test_aug=False):
         self.batch_size = batch_size
         self.n_workers = n_workers
-        self.dataset = _TestData(test_npz, aug)
+        dataset = StatoilTestData(test_npz)
+        if test_aug:
+            raise NotImplementedError
+        else:
+            self.stride = StatoilDataStride(dataset, np.arange(len(dataset)))
 
     def __call__(self):
-        return DataLoader(self.dataset, batch_size=self.batch_size,
-                          num_workers=self.n_workers)
+        return StatoilDataLoader(self.stride, batch_size=self.batch_size,
+                                 num_workers=self.n_workers)
