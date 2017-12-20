@@ -8,12 +8,8 @@ class _InputLayer(nn.Sequential):
     def __init__(self, densenet, n_channels):
         super(_InputLayer, self).__init__()
 
-        if densenet.add_bottleneck and densenet.compress_rate < 1:
-            self.n_channels = densenet.grow_rate * 2
-        else:
-            self.n_channels = 16
-        self.add_module('conv', nn.Conv2d(n_channels, self.n_channels, 3,
-                                           padding=1, bias=False))
+        # do nothing
+        self.n_channels = n_channels
 
 
 class _DenseLayer(nn.Sequential):
@@ -46,7 +42,6 @@ class _DenseBlock(nn.Sequential):
 
     def __init__(self, densenet, n_layers, n_channels):
         super(_DenseBlock, self).__init__()
-        self.n_layers = n_layers
 
         for i in range(n_layers):
             layer = _DenseLayer(densenet, n_channels)
@@ -69,6 +64,9 @@ class _TransLayer(nn.Sequential):
             self.n_channels = int(n_channels * densenet.compress_rate)
             self.add_module('conv', nn.Conv2d(n_channels, self.n_channels, 1,
                                               bias=False))
+            if densenet.dropout_rate > 0.0001:
+                self.add_module('dropout', nn.Dropout(densenet.dropout_rate,
+                                                      inplace=True))
             self.add_module('pool', nn.AvgPool2d(2, 2))
 
 
@@ -119,9 +117,17 @@ class DenseNet(nn.Sequential):
 
         self.add_module('Output', _OutputLayer(self, n_channels))
 
-
-# Only for testing
-if __name__ == '__main__':
-    model = DenseNet()
-    v = torch.autograd.Variable(torch.randn(1, 2, 56, 56))
-    print(model(v))
+    def param_options(self):
+        # don't regularize batchnorm layers
+        params_batchnorm = []
+        params_others = []
+        for name, param in dict(self.named_parameters()).items():
+            if '.norm' in name:
+                params_batchnorm.append(param)
+            else:
+                params_others.append(param)
+        options = [
+            { 'params': params_others },
+            { 'params': params_batchnorm, 'weight_decay': 0 },
+        ]
+        return options

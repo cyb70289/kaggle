@@ -1,5 +1,6 @@
 import argparse
 import logging
+from tqdm import tqdm
 import numpy as np
 import torch
 from torch import nn, optim
@@ -13,15 +14,16 @@ _loglevel = (('debug', logging.DEBUG),
              ('info', logging.INFO),
              ('warn', logging.WARN),
              ('error', logging.ERROR))
-
 LOG = logging.getLogger(__name__)
+tqdm.monitor_interval = 0
 
 
-def init_random_seed(seed):
+def init_random_seed(seed, cuda):
     if seed:
         np.random.seed(seed)
         torch.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
+        if cuda:
+            torch.cuda.manual_seed_all(seed)
 
 
 def parse_args():
@@ -39,15 +41,24 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_epoch(args, model, loader, loss, optimizer):
+def train_epoch(args, model, train_loader, dev_loader, lossf, optimizer,
+                epoch, max_epochs):
+    ##################################################
+    # Train
+    ##################################################
     model.train()
 
-    bce_sum = 0.0
-    bce_count = 0
+    loss_sum = 0.0
+    acc_sum = 0.0
+    count = 0
 
-    LOG.info('Training...')
+    bar_desc = '{:03d}/{:03d}'.format(epoch+1, max_epochs)
+    bar_format = '{l_bar}{bar}| {remaining}{postfix}'
+    bar_postfix = '------,---, ------,---'
+    pbar = tqdm(total=len(train_loader), desc=bar_desc, bar_format=bar_format)
+    pbar.set_postfix_str(bar_postfix)
 
-    for img, label in loader:
+    for img, label in train_loader:
         model.zero_grad()
         optimizer.zero_grad()
 
@@ -56,54 +67,74 @@ def train_epoch(args, model, loader, loss, optimizer):
         if args.cuda:
             X = X.cuda(async=True)
             y = y.cuda(async=True)
+
         # Forward
-        output = loss(model(X), y)
-        bce_sum += output.data[0]
-        bce_count += y.size(0)
+        predict = model(X)
+        output = lossf(predict, y)
+        loss_sum += output.data[0]
+        acc_sum += ((predict.data > 0.5).float() == y.data).sum()
+        count += y.size(0)
+
         # Backward
         output.backward()
         optimizer.step()
 
-    LOG.info('Train loss: {:.4f}'.format(bce_sum/bce_count))
+        loss = loss_sum/count
+        acc = acc_sum/count*100
+        postfix = '{:.4f},{:.0f}%, ------,---'.format(loss, acc)
+        pbar.set_postfix_str(postfix)
+        pbar.update(1)
 
+    train_loss = loss_sum/count
+    train_acc = acc_sum/count
 
-def validate_epoch(args, model, loader, loss, optimizer):
+    ##################################################
+    # Validate
+    ##################################################
     model.eval()
 
-    bce_sum = 0.0
-    bce_count = 0
+    loss_sum = 0.0
+    acc_sum = 0.0
+    count = 0
 
-    LOG.info('Validating...')
-
-    for img, label in loader:
+    for img, label in dev_loader:
         X = Variable(img, volatile=True, requires_grad=False)
         y = Variable(label, volatile=True, requires_grad=False)
         if args.cuda:
             X = X.cuda(async=True)
             y = y.cuda(async=True)
-        # Evaluate
-        output = loss(model(X), y)
-        bce_sum += output.data[0]
-        bce_count += y.size(0)
 
-    LOG.info('Dev loss: {:.4f}'.format(bce_sum/bce_count))
+        predict = model(X)
+        output = lossf(predict, y)
+        loss_sum += output.data[0]
+        acc_sum += ((predict.data > 0.5).float() == y.data).sum()
+        count += y.size(0)
+
+    dev_loss = loss_sum/count
+    dev_acc = acc_sum/count
+    postfix = '{:.4f},{:.0f}%, {:.4f},{:.0f}%'.format(
+        train_loss, train_acc*100, dev_loss, dev_acc*100)
+    pbar.set_postfix_str(postfix)
+
+    return train_loss, dev_loss
 
 
 def train(args, model):
-    loss = nn.BCEWithLogitsLoss(size_average=False)
-    optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.9,
-                          nesterov=True, weight_decay=args.l2)
+    lossf = nn.BCEWithLogitsLoss(size_average=False)
+    optimizer = optim.Adam(model.param_options(), lr=1e-4,
+                           weight_decay=args.l2)
 
     if args.cuda:
         model.cuda()
-        loss.cuda()
+        lossf.cuda()
 
     Loader = StatoilTrainLoader(args.train_file, args.batch_size,
                                 dev_ratio=0.2, seed=args.seed)
     train_loader, dev_loader = next(Loader())
     for i in range(args.max_epochs):
-        bceloss_train = train_epoch(args, model, train_loader, loss, optimizer)
-        bceloss_dev = validate_epoch(args, model, dev_loader, loss, optimizer)
+        train_loss, dev_loss = train_epoch(args, model, train_loader,
+                                           dev_loader, lossf, optimizer,
+                                           i, args.max_epochs)
 
 
 if __name__ == '__main__':
@@ -116,9 +147,9 @@ if __name__ == '__main__':
     LOG.debug('Train on {}'.format(['GPU', 'CPU'][args.cpu]))
     args.cuda = not args.cpu
 
-    init_random_seed(args.seed)
+    init_random_seed(args.seed, args.cuda)
 
-    model = DenseNet()
+    model = DenseNet(block_lst=(4, 4, 4, 4))
     if args.cv:
         train_cv(args, model)
     else:

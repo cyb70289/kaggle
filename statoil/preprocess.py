@@ -10,8 +10,6 @@ data_dir = 'dataset/'
 def process_band(band):
     # list to numpy 2d array
     img = np.array(band).reshape((75,75))
-    # resize image to 56x56
-    img = cv2.resize(img, (56, 56), cv2.INTER_AREA)
     return img
 
 
@@ -41,13 +39,13 @@ maxv = max(df_train['band_1'].apply(np.max).max(),
            df_train['band_2'].apply(np.max).max())
 
 df_train['band_1'] = df_train['band_1'].apply(
-    lambda x: (x-minv)/(maxv-minv))
+    lambda x: 2*(x-minv)/(maxv-minv)-1)
 df_train['band_2'] = df_train['band_2'].apply(
-    lambda x: (x-minv)/(maxv-minv))
+    lambda x: 2*(x-minv)/(maxv-minv)-1)
 df_test['band_1'] = df_test['band_1'].apply(
-    lambda x: (x-minv)/(maxv-minv))
+    lambda x: 2*(x-minv)/(maxv-minv)-1)
 df_test['band_2'] = df_test['band_2'].apply(
-    lambda x: (x-minv)/(maxv-minv))
+    lambda x: 2*(x-minv)/(maxv-minv)-1)
 
 file_train = data_dir + 'train.npz'
 file_test = data_dir + 'test.npz'
