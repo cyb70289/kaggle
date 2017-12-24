@@ -1,3 +1,4 @@
+import os
 import argparse
 import logging
 from tqdm import tqdm
@@ -15,6 +16,7 @@ _loglevel = (('debug', logging.DEBUG),
              ('warn', logging.WARN),
              ('error', logging.ERROR))
 LOG = logging.getLogger(__name__)
+
 tqdm.monitor_interval = 0
 
 
@@ -30,19 +32,42 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Kaggle statoil competition')
     parser.add_argument('--train-file', default='dataset/train.npz')
     parser.add_argument('--test-file', default='dataset/test.npz')
+    parser.add_argument('--model-path', default='saved-models/')
     parser.add_argument('--cpu', action='store_true', help='Train on CPU')
     parser.add_argument('--loglevel', default='info',
                         choices=[x[0] for x in _loglevel])
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
-    parser.add_argument('--max-epochs', type=int, metavar='N', default=100)
+    parser.add_argument('--max-epochs', type=int, metavar='N', default=300)
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
+    parser.add_argument('--model', default='densenet', choices=
+                        ['densenet', 'simplenet'])
     return parser.parse_args()
 
 
-def train_epoch(args, model, train_loader, dev_loader, lossf, optimizer,
+def get_model(args):
+    if args.model == 'densenet':
+        model = DenseNet(block_lst=(4, 4, 4, 4))
+
+    model_path = os.path.join(args.model_path, args.model+'/')
+    os.makedirs(model_path, exist_ok=True)
+
+    lossf = nn.BCEWithLogitsLoss(size_average=False)
+    optimizer = optim.Adam(model.param_options(), lr=1e-4,
+                           weight_decay=args.l2)
+
+    if args.cuda:
+        model.cuda()
+        lossf.cuda()
+
+    return model, lossf, optimizer, model_path
+
+
+def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
                 epoch, max_epochs):
+    """ Train and validate one epoch """
+
     ##################################################
     # Train
     ##################################################
@@ -119,22 +144,54 @@ def train_epoch(args, model, train_loader, dev_loader, lossf, optimizer,
     return train_loss, dev_loss
 
 
-def train(args, model):
-    lossf = nn.BCEWithLogitsLoss(size_average=False)
-    optimizer = optim.Adam(model.param_options(), lr=1e-4,
-                           weight_decay=args.l2)
+def train(args):
+    if args.cv:
+        loader = StatoilTrainLoader(args.train_file, args.batch_size,
+                                    folds=args.cv, seed=args.seed)()
+    else:
+        loader = StatoilTrainLoader(args.train_file, args.batch_size,
+                                    dev_ratio=0.2, seed=args.seed)()
 
-    if args.cuda:
-        model.cuda()
-        lossf.cuda()
+    loss_lst = []
 
-    Loader = StatoilTrainLoader(args.train_file, args.batch_size,
-                                dev_ratio=0.2, seed=args.seed)
-    train_loader, dev_loader = next(Loader())
-    for i in range(args.max_epochs):
-        train_loss, dev_loss = train_epoch(args, model, train_loader,
-                                           dev_loader, lossf, optimizer,
-                                           i, args.max_epochs)
+    for i, (train_loader, dev_loader) in enumerate(loader, 1):
+        LOG.info('-'*60)
+        model, lossf, optimizer, model_path = get_model(args)
+
+        model_file = 'cv{}'.format(i) if args.cv else 'best'
+        model_file = os.path.join(model_path, model_file)
+
+        stop_count = 0
+        dev_loss_min = 99.99
+
+        for epoch in range(args.max_epochs):
+            train_loss, dev_loss = train_epoch(args, model, lossf, optimizer,
+                                               train_loader, dev_loader,
+                                               epoch, args.max_epochs)
+            if dev_loss < dev_loss_min:
+                torch.save(model.state_dict(), model_file)
+                LOG.info('Model saved: {}, dev_loss: {:.4f}'.format(model_file,
+                                                                    dev_loss))
+                dev_loss_min = dev_loss
+            if train_loss < 0.1:
+                # stop training if sure of overfit
+                stop_count += 1
+                if stop_count >= 3:
+                    break
+
+        # append loss to saved file name
+        model_file2 = '{}-{:.4f}.pt'.format(model_file, dev_loss_min)
+        os.rename(model_file, model_file2)
+
+        loss_lst.append(dev_loss_min)
+        del model, lossf
+
+    LOG.info('='*60)
+    LOG.info('Loss: {}'.format(list(map(lambda x: '{:.4f}'.format(x),
+                                        loss_lst))))
+    if args.cv:
+        LOG.info('Loss mean: {:.4f}, stdev: {:.4f}'.format(np.mean(loss_lst),
+                                                           np.std(loss_lst)))
 
 
 if __name__ == '__main__':
@@ -149,8 +206,4 @@ if __name__ == '__main__':
 
     init_random_seed(args.seed, args.cuda)
 
-    model = DenseNet(block_lst=(4, 4, 4, 4))
-    if args.cv:
-        train_cv(args, model)
-    else:
-        train(args, model)
+    train(args)

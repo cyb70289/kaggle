@@ -103,8 +103,8 @@ ENV/
 # pycharm workspace
 .idea/
 
-# dataset link
-*/dataset
-
 # notebook checkpoints
 .ipynb_checkpoints/
+
+# vim temporary files
+*.swp
