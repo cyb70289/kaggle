@@ -7,6 +7,7 @@ import torch
 from torch import nn, optim
 from torch.autograd import Variable
 
+from models.simplenet import SimpleNet
 from models.densenet import DenseNet
 from utils import StatoilTrainLoader
 
@@ -39,22 +40,24 @@ def parse_args():
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
-    parser.add_argument('--max-epochs', type=int, metavar='N', default=300)
+    parser.add_argument('--max-epochs', type=int, metavar='N', default=666)
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
-    parser.add_argument('--model', default='densenet', choices=
+    parser.add_argument('--model', default='simplenet', choices=
                         ['densenet', 'simplenet'])
     return parser.parse_args()
 
 
 def get_model(args):
-    if args.model == 'densenet':
+    if args.model == 'simplenet':
+        model = SimpleNet()
+    elif args.model == 'densenet':
         model = DenseNet(block_lst=(4, 4, 4, 4))
 
     model_path = os.path.join(args.model_path, args.model+'/')
     os.makedirs(model_path, exist_ok=True)
 
     lossf = nn.BCEWithLogitsLoss(size_average=False)
-    optimizer = optim.Adam(model.param_options(), lr=1e-4,
+    optimizer = optim.Adam(model.param_options(), lr=1e-3,
                            weight_decay=args.l2)
 
     if args.cuda:
@@ -145,6 +148,8 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
 
 
 def train(args):
+    LOG.info('Training model: {}'.format(args.model))
+
     if args.cv:
         loader = StatoilTrainLoader(args.train_file, args.batch_size,
                                     folds=args.cv, seed=args.seed)()
