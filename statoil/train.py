@@ -9,7 +9,7 @@ from torch.autograd import Variable
 
 from models.simplenet import SimpleNet
 from models.densenet import DenseNet
-from utils import StatoilTrainLoader
+from utils import StatoilTrainLoader, LRSchedStep
 
 
 _loglevel = (('debug', logging.DEBUG),
@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
-    parser.add_argument('--max-epochs', type=int, metavar='N', default=666)
+    parser.add_argument('--max-epochs', type=int, metavar='N', default=888)
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--model', default='simplenet', choices=
                         ['densenet', 'simplenet'])
@@ -57,8 +57,7 @@ def get_model(args):
     os.makedirs(model_path, exist_ok=True)
 
     lossf = nn.BCEWithLogitsLoss(size_average=False)
-    optimizer = optim.Adam(model.param_options(), lr=1e-3,
-                           weight_decay=args.l2)
+    optimizer = optim.Adam(model.param_options(), weight_decay=args.l2)
 
     if args.cuda:
         model.cuda()
@@ -166,8 +165,10 @@ def train(args):
         model_file = 'cv{}'.format(i) if args.cv else 'best'
         model_file = os.path.join(model_path, model_file)
 
-        stop_count = 0
+        no_improve_count = 0
         dev_loss_min = 99.99
+        lrsched = LRSchedStep(optimizer.param_groups, 1e-3,
+                              (0.25, 0.5e-3), (0.20, 1e-4))
 
         for epoch in range(args.max_epochs):
             train_loss, dev_loss = train_epoch(args, model, lossf, optimizer,
@@ -178,11 +179,13 @@ def train(args):
                 LOG.info('Model saved: {}, dev_loss: {:.4f}'.format(model_file,
                                                                     dev_loss))
                 dev_loss_min = dev_loss
-            if train_loss < 0.1:
-                # stop training if sure of overfit
-                stop_count += 1
-                if stop_count >= 3:
-                    break
+                no_improve_count = 0
+
+            if no_improve_count > 150:
+                LOG.info('Early stopping')
+                break
+
+            lrsched.update(dev_loss)
 
         # append loss to saved file name
         model_file2 = '{}-{:.4f}.pt'.format(model_file, dev_loss_min)

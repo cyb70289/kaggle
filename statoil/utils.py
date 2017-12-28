@@ -10,6 +10,10 @@ from sklearn.model_selection import KFold, StratifiedKFold
 LOG = logging.getLogger(__name__)
 
 
+############################################################
+# augmentation
+############################################################
+
 class AugImgBase(object):
     RANDOM = -1
 
@@ -51,13 +55,9 @@ class AugImgRot90(AugImgBase):
         return np.rot90(img, mode)
 
 
-class ImgToTensor(object):
-
-    def __call__(self, img):
-        # H * W * C --> C * H * W
-        img = img.transpose((2, 0, 1))
-        return torch.from_numpy(img.copy())
-
+############################################################
+# dataset and dataloader
+############################################################
 
 class StatoilTrainData(Dataset):
     """ Holds statoil train dataset """
@@ -94,7 +94,6 @@ class StatoilDataStride(Dataset):
     def __init__(self, dataset, indices):
         self.dataset = dataset
         self.indices = indices
-        self.totensor = ImgToTensor()
         self.aug = []
 
     def _set_augment(self, aug):
@@ -110,7 +109,9 @@ class StatoilDataStride(Dataset):
         X, y = self.dataset[self.indices[idx]]
         for aug in self.aug:
             X = aug(X)
-        X = self.totensor(X)
+        # H * W * C --> C * H * W
+        X = X.transpose((2, 0, 1))
+        X = torch.from_numpy(X.copy())
         return X, y
 
 
@@ -201,3 +202,52 @@ class StatoilTestLoader(object):
     def __call__(self):
         return StatoilDataLoader(self.stride, batch_size=self.batch_size,
                                  num_workers=self.n_workers)
+
+
+############################################################
+# learning rate scheduler
+############################################################
+
+class LRSchedNone(object):
+    """ No learning rate adjustment """
+
+    def __init__(self, param_groups, lr):
+        self.param_groups = param_groups
+        self.set_lr(lr)
+
+    def set_lr(self, lr):
+        for param_group in self.param_groups:
+            param_group['lr'] = lr
+        self.lr = lr
+
+    def update(self, loss):
+        pass
+
+
+class LRSchedStep(LRSchedNone):
+    """ Learning rate scheduler based on predefine (loss, lr) pairs """
+
+    def __init__(self, param_groups, lr, *steps):
+        super(LRSchedStep, self).__init__(param_groups, lr)
+        self.steps = steps
+
+    def update(self, loss):
+        for step_loss, step_lr in self.steps:
+            # update lr if loss below threshold
+            if loss < step_loss and self.lr > step_lr:
+                self.set_lr(step_lr)
+                LOG.info('Update learning rate to {:.5f}'.format(step_lr))
+
+
+class LRSchedDecay(LRSchedNone):
+    """ Learning rate decay on each epoch """
+
+    def __init__(self, param_groups, lr, decay, lr_min=0.0):
+        super(LRSchedDecay, self).__init__(param_groups, lr)
+        self.decay = decay
+
+    def update(self, loss):
+        if self.lr > lr_min:
+            lr = min(self.lr*self.decay, lr_min)
+            self.set_lr(lr)
+            LOG.debug('Update learning rate to {:.5f}'.format(lr))
