@@ -9,7 +9,7 @@ from torch.autograd import Variable
 
 from models.simplenet import SimpleNet
 from models.densenet import DenseNet
-from utils import StatoilTrainLoader, LRSchedStep
+from utils import StatoilTrainLoader, LRSchedNone
 
 
 _loglevel = (('debug', logging.DEBUG),
@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
-    parser.add_argument('--max-epochs', type=int, metavar='N', default=888)
+    parser.add_argument('--max-epochs', type=int, metavar='N', default=999)
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--model', default='simplenet', choices=
                         ['densenet', 'simplenet'])
@@ -167,8 +167,7 @@ def train(args):
 
         no_improve_count = 0
         dev_loss_min = 99.99
-        lrsched = LRSchedStep(optimizer.param_groups, 1e-3,
-                              (0.25, 0.5e-3), (0.20, 1e-4))
+        lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
 
         for epoch in range(args.max_epochs):
             train_loss, dev_loss = train_epoch(args, model, lossf, optimizer,
@@ -180,8 +179,10 @@ def train(args):
                                                                     dev_loss))
                 dev_loss_min = dev_loss
                 no_improve_count = 0
+            else:
+                no_improve_count += 1
 
-            if no_improve_count > 150:
+            if no_improve_count > 200:
                 LOG.info('Early stopping')
                 break
 

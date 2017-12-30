@@ -10,7 +10,7 @@ class _ConvLayer(nn.Sequential):
 
         # conv layers
         for i, channels_lst in enumerate(conv_lst, 1):
-            # conv + bn + relu + pool
+            # conv + relu + pool
             if not isinstance(channels_lst, (list, tuple)):
                 channels_lst = [channels_lst]
             for j, channels in enumerate(channels_lst, 1):
@@ -39,9 +39,7 @@ class _FCLayer(nn.Sequential):
         for i, channels in enumerate(channels_lst, 1):
             self.add_module('linear{}'.format(i),
                             nn.Linear(n_channels, channels))
-            if i < len(channels_lst):
-                self.add_module('tanh{}'.format(i), nn.Tanh())
-            self.add_module('relu{}'.format(i), nn.ReLU())
+            self.add_module('relu{}'.format(i), nn.ReLU(inplace=True))
             if dropout > 0.001:
                 self.add_module('dropout{}'.format(i), nn.Dropout(dropout))
             n_channels = channels
@@ -54,7 +52,7 @@ class SimpleNet(nn.Module):
 
     _def_layer_dict = {
         'conv': (64, 128, 256, 512),
-        'fc': 1024,
+        'fc': (1024, 1024),
     }
 
     def __init__(self, layer_dict=_def_layer_dict, n_channels=2, n_classes=1,
@@ -73,6 +71,7 @@ class SimpleNet(nn.Module):
         poolsize = y.size()[-2:]
         y = F.max_pool2d(y, poolsize)
         y = y.view(y.size(0), -1)
+        y = F.relu(y)
         # fc
         return self.fc_layer(y)
 

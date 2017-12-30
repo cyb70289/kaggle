@@ -11,48 +11,67 @@ LOG = logging.getLogger(__name__)
 
 
 ############################################################
-# augmentation
+# image augmentation
+# - imgae shape: H x W x C
 ############################################################
 
-class AugImgBase(object):
-    RANDOM = -1
+class StatoilAugRot90(object):
+    ROT90 = 1
+    ROT180 = 2
+    ROT270 = 3
 
-    def __init__(self, mode=RANDOM):
+    def __init__(self, mode=None):
         self.mode = mode
-
-    def __call__(self, img):
-        raise NotImplementedError
-
-
-class AugImgFlip(AugImgBase):
-    VERTICAL = 1
-    HORIZONTAL = 2
-    BOTH = 3
 
     # img shape: H * W * C
     def __call__(self, img):
         mode = self.mode
-        if mode == AugImgBase.RANDOM:
+        if mode is None:
+            mode = np.random.randint(0, 4)
+        return np.rot90(img, mode)
+
+
+# XXX: not used
+class StatoilAugShift(object):
+
+    def __init__(self, delta=(6,6)):
+        self.deltah, self.deltav = delta
+
+    def __call__(self, img):
+        augimg = np.copy(img)
+        dh = np.random.randint(-self.deltah, self.deltah+1)
+        dv = np.random.randint(-self.deltav, self.deltav+1)
+        # shift horizontal
+        if dh > 0:
+            augimg[:, dh:] = img[:, :-dh]
+        elif dh < 0:
+            augimg[:, :dh] = img[:, -dh:]
+        # shift vertical
+        if dv > 0:
+            augimg[dv:, :] = img[:-dv, :]
+        elif dv < 0:
+            augimg[:dv, :] = img[-dv:, :]
+        return augimg
+
+
+# XXX: not used
+class StatoilAugFlip(object):
+    VERTICAL = 1
+    HORIZONTAL = 2
+    BOTH = 3
+
+    def __init__(self, mode=None):
+        self.mode = mode
+
+    def __call__(self, img):
+        mode = self.mode
+        if mode is None:
             mode = np.random.randint(0, 4)
         if mode & 1:
             img = np.flip(img, 0)
         if mode & 2:
             img = np.flip(img, 1)
         return img
-
-
-class AugImgRot90(AugImgBase):
-    ROT90 = 1
-    ROT180 = 2
-    ROT270 = 3
-
-    # img shape: H * W * C
-    def __call__(self, img):
-        assert(img.shape[0] == img.shape[1])
-        mode = self.mode
-        if mode == AugImgBase.RANDOM:
-            mode = np.random.randint(0, 4)
-        return np.rot90(img, mode)
 
 
 ############################################################
@@ -64,8 +83,8 @@ class StatoilTrainData(Dataset):
 
     def __init__(self, train_npz):
         data = np.load(train_npz)
-        self.X = data['img'].astype(np.float32)
-        self.y = data['y_train'].astype(np.float32)[..., None]
+        self.X = data['img']
+        self.y = data['label'][..., None]
 
     def __len__(self):
         return len(self.X)
@@ -154,7 +173,9 @@ class StatoilTrainLoader(object):
         self.stratified = stratified
         self.seed = seed
         self.n_workers = n_workers
-        self.train_aug = [AugImgFlip(), AugImgRot90()] if train_aug else []
+        self.train_aug = []
+        if train_aug:
+            self.train_aug = [StatoilAugRot90()]
 
         dataset = StatoilTrainData(train_npz)
         self.splitter = StatoilTrainSplitter(dataset)
