@@ -9,13 +9,9 @@ from torch.autograd import Variable
 
 from models.simplenet import SimpleNet
 from models.densenet import DenseNet
-from utils import StatoilTrainLoader, LRSchedNone
+from utils import StatoilTrainLoader, LRSchedNone, LOGLEVEL
 
 
-_loglevel = (('debug', logging.DEBUG),
-             ('info', logging.INFO),
-             ('warn', logging.WARN),
-             ('error', logging.ERROR))
 LOG = logging.getLogger(__name__)
 
 tqdm.monitor_interval = 0
@@ -32,11 +28,10 @@ def init_random_seed(seed, cuda):
 def parse_args():
     parser = argparse.ArgumentParser(description='Kaggle statoil competition')
     parser.add_argument('--train-file', default='dataset/train.npz')
-    parser.add_argument('--test-file', default='dataset/test.npz')
     parser.add_argument('--model-path', default='saved-models/')
     parser.add_argument('--cpu', action='store_true', help='Train on CPU')
     parser.add_argument('--loglevel', default='info',
-                        choices=[x[0] for x in _loglevel])
+                        choices=[x[0] for x in LOGLEVEL])
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
@@ -52,6 +47,8 @@ def get_model(args):
         model = SimpleNet()
     elif args.model == 'densenet':
         model = DenseNet(block_lst=(4, 4, 4, 4))
+    else:
+        raise ValueError
 
     model_path = os.path.join(args.model_path, args.model+'/')
     os.makedirs(model_path, exist_ok=True)
@@ -85,20 +82,18 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     pbar = tqdm(total=len(train_loader), desc=bar_desc, bar_format=bar_format)
     pbar.set_postfix_str(bar_postfix)
 
-    for X_img, X_extra, y in train_loader:
+    for X_img, _, y in train_loader:
         model.zero_grad()
         optimizer.zero_grad()
 
         X_img = Variable(X_img, volatile=False, requires_grad=True)
-        X_extra = Variable(X_extra, volatile=False, requires_grad=True)
         y = Variable(y, volatile=False, requires_grad=False)
         if args.cuda:
             X_img = X_img.cuda(async=True)
-            X_extra = X_extra.cuda(async=True)
             y = y.cuda(async=True)
 
         # Forward
-        predict = model(X_img, X_extra)
+        predict = model(X_img)
         output = lossf(predict, y)
         loss_sum += output.data[0]
         acc_sum += ((predict.data > 0.5).float() == y.data).sum()
@@ -126,16 +121,14 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     acc_sum = 0.0
     count = 0
 
-    for X_img, X_extra, y in dev_loader:
+    for X_img, _, y in dev_loader:
         X_img = Variable(X_img, volatile=True, requires_grad=False)
-        X_extra = Variable(X_extra, volatile=True, requires_grad=False)
         y = Variable(y, volatile=True, requires_grad=False)
         if args.cuda:
             X_img = X_img.cuda(async=True)
-            X_extra = X_extra.cuda(async=True)
             y = y.cuda(async=True)
 
-        predict = model(X_img, X_extra)
+        predict = model(X_img)
         output = lossf(predict, y)
         loss_sum += output.data[0]
         acc_sum += ((predict.data > 0.5).float() == y.data).sum()
@@ -210,7 +203,7 @@ def train(args):
 if __name__ == '__main__':
     args = parse_args()
 
-    logging.basicConfig(level = dict(_loglevel)[args.loglevel])
+    logging.basicConfig(level = dict(LOGLEVEL)[args.loglevel])
 
     if not torch.cuda.is_available():
         args.cpu = True

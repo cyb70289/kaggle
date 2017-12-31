@@ -9,6 +9,10 @@ from sklearn.model_selection import KFold, StratifiedKFold
 
 LOG = logging.getLogger(__name__)
 
+LOGLEVEL = (('debug', logging.DEBUG),
+            ('info', logging.INFO),
+            ('warn', logging.WARN),
+            ('error', logging.ERROR))
 
 ############################################################
 # image augmentation
@@ -106,7 +110,8 @@ class StatoilTestData(Dataset):
         return len(self.X_img)
 
     def __getitem__(self, idx):
-        return self.X_img[idx], self.X_extra[idx]
+        # add dummy label to be compatible with train data
+        return self.X_img[idx], self.X_extra[idx], 0
 
 
 class StatoilDataStride(Dataset):
@@ -205,7 +210,7 @@ class StatoilTrainLoader(object):
                 train_loader = DataLoader(train_stride, shuffle=True,
                                           batch_size=self.batch_size,
                                           num_workers=self.n_workers)
-                dev_loader = DataLoader(dev_stride,
+                dev_loader = DataLoader(dev_stride, shuffle=False,
                                         batch_size=self.batch_size,
                                         num_workers=self.n_workers)
                 yield train_loader, dev_loader
@@ -223,8 +228,8 @@ class StatoilTestLoader(object):
             self.stride = StatoilDataStride(dataset, np.arange(len(dataset)))
 
     def __call__(self):
-        return StatoilDataLoader(self.stride, batch_size=self.batch_size,
-                                 num_workers=self.n_workers)
+        return DataLoader(self.stride, batch_size=self.batch_size,
+                          num_workers=self.n_workers, shuffle=False)
 
 
 ############################################################
