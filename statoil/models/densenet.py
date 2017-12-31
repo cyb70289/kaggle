@@ -117,6 +117,10 @@ class DenseNet(nn.Sequential):
 
         self.add_module('Output', _OutputLayer(self, n_channels))
 
+    def forward(self, *X):
+        X_img = X[0]
+        return super(DenseNet, self).forward(X_img)
+
     def param_options(self):
         # don't regularize batchnorm layers
         params_batchnorm = []

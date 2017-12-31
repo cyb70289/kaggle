@@ -55,8 +55,8 @@ class SimpleNet(nn.Module):
         'fc': (1024, 1024),
     }
 
-    def __init__(self, layer_dict=_def_layer_dict, n_channels=2, n_classes=1,
-                 dropout_conv=0.5, dropout_fc=0.5):
+    def __init__(self, layer_dict=_def_layer_dict, n_channels=2,
+                 n_classes=1, dropout_conv=0.5, dropout_fc=0.5):
         super(SimpleNet, self).__init__()
 
         self.conv_layer = _ConvLayer(layer_dict['conv'], n_channels,
@@ -64,9 +64,10 @@ class SimpleNet(nn.Module):
         self.fc_layer = _FCLayer(layer_dict['fc'], self.conv_layer.n_channels,
                                  n_classes, dropout_fc)
 
-    def forward(self, x):
+    def forward(self, *X):
+        X_img = X[0]
         # conv
-        y = self.conv_layer(x)
+        y = self.conv_layer(X_img)
         # global pool
         poolsize = y.size()[-2:]
         y = F.max_pool2d(y, poolsize)

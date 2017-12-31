@@ -83,14 +83,15 @@ class StatoilTrainData(Dataset):
 
     def __init__(self, train_npz):
         data = np.load(train_npz)
-        self.X = data['img']
+        self.X_img = data['img']
+        self.X_extra = data['extra']
         self.y = data['label'][..., None]
 
     def __len__(self):
-        return len(self.X)
+        return len(self.y)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        return self.X_img[idx], self.X_extra[idx], self.y[idx]
 
 
 class StatoilTestData(Dataset):
@@ -98,13 +99,14 @@ class StatoilTestData(Dataset):
 
     def __init__(self, test_npz):
         data = np.load(test_npz)
-        self.X = data['img'].astype(np.float32)
+        self.X_img = data['img']
+        self.X_extra = data['extra']
 
     def __len__(self):
-        return len(self.X)
+        return len(self.X_img)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        return self.X_img[idx], self.X_extra[idx]
 
 
 class StatoilDataStride(Dataset):
@@ -125,13 +127,13 @@ class StatoilDataStride(Dataset):
         return len(self.indices)
 
     def __getitem__(self, idx):
-        X, y = self.dataset[self.indices[idx]]
+        X_img, X_extra, y = self.dataset[self.indices[idx]]
         for aug in self.aug:
-            X = aug(X)
+            X_img = aug(X_img)
         # H * W * C --> C * H * W
-        X = X.transpose((2, 0, 1))
-        X = torch.from_numpy(X.copy())
-        return X, y
+        X_img = X_img.transpose((2, 0, 1))
+        X_img = torch.from_numpy(X_img.copy())
+        return X_img, X_extra, y
 
 
 class StatoilTrainSplitter(object):

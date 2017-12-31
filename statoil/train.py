@@ -85,18 +85,20 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     pbar = tqdm(total=len(train_loader), desc=bar_desc, bar_format=bar_format)
     pbar.set_postfix_str(bar_postfix)
 
-    for img, label in train_loader:
+    for X_img, X_extra, y in train_loader:
         model.zero_grad()
         optimizer.zero_grad()
 
-        X = Variable(img, volatile=False, requires_grad=True)
-        y = Variable(label, volatile=False, requires_grad=False)
+        X_img = Variable(X_img, volatile=False, requires_grad=True)
+        X_extra = Variable(X_extra, volatile=False, requires_grad=True)
+        y = Variable(y, volatile=False, requires_grad=False)
         if args.cuda:
-            X = X.cuda(async=True)
+            X_img = X_img.cuda(async=True)
+            X_extra = X_extra.cuda(async=True)
             y = y.cuda(async=True)
 
         # Forward
-        predict = model(X)
+        predict = model(X_img, X_extra)
         output = lossf(predict, y)
         loss_sum += output.data[0]
         acc_sum += ((predict.data > 0.5).float() == y.data).sum()
@@ -124,14 +126,16 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     acc_sum = 0.0
     count = 0
 
-    for img, label in dev_loader:
-        X = Variable(img, volatile=True, requires_grad=False)
-        y = Variable(label, volatile=True, requires_grad=False)
+    for X_img, X_extra, y in dev_loader:
+        X_img = Variable(X_img, volatile=True, requires_grad=False)
+        X_extra = Variable(X_extra, volatile=True, requires_grad=False)
+        y = Variable(y, volatile=True, requires_grad=False)
         if args.cuda:
-            X = X.cuda(async=True)
+            X_img = X_img.cuda(async=True)
+            X_extra = X_extra.cuda(async=True)
             y = y.cuda(async=True)
 
-        predict = model(X)
+        predict = model(X_img, X_extra)
         output = lossf(predict, y)
         loss_sum += output.data[0]
         acc_sum += ((predict.data > 0.5).float() == y.data).sum()
