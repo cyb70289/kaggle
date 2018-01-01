@@ -82,7 +82,7 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     pbar = tqdm(total=len(train_loader), desc=bar_desc, bar_format=bar_format)
     pbar.set_postfix_str(bar_postfix)
 
-    for X_img, _, y in train_loader:
+    for X_img, y in train_loader:
         model.zero_grad()
         optimizer.zero_grad()
 
@@ -121,7 +121,7 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     acc_sum = 0.0
     count = 0
 
-    for X_img, _, y in dev_loader:
+    for X_img, y in dev_loader:
         X_img = Variable(X_img, volatile=True, requires_grad=False)
         y = Variable(y, volatile=True, requires_grad=False)
         if args.cuda:

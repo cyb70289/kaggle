@@ -22,17 +22,6 @@ def norm(data, minv, maxv):
     return 2 * (data-minv) / (maxv-minv) - 1
 
 
-def norm1(data):
-    data = np.array(data)
-    return norm(data, data.min(), data.max())
-
-
-def mean_top(img):
-    # average 25% brightest pixels
-    p = np.percentile(img, 75)
-    return np.mean(img[img>p])
-
-
 def pack_imgs(df):
     samples = df.shape[0]
     w, h = df['band_1'][0].shape
@@ -45,21 +34,11 @@ def pack_imgs(df):
 
 print('reading train data...')
 df_train = pd.read_json(data_dir + 'train.json')
-train_band1 = df_train['band_1'].apply(norm1)
-train_band2 = df_train['band_2'].apply(norm1)
-train_band1_mean = train_band1.apply(mean_top)
-train_band2_mean = train_band2.apply(mean_top)
-train_band_diff = (train_band1-train_band2).apply(np.mean)
 df_train['band_1'] = df_train['band_1'].apply(process_band)
 df_train['band_2'] = df_train['band_2'].apply(process_band)
 
 print('reading test data...')
 df_test = pd.read_json(data_dir + 'test.json')
-test_band1 = df_test['band_1'].apply(norm1)
-test_band2 = df_test['band_2'].apply(norm1)
-test_band1_mean = test_band1.apply(mean_top)
-test_band2_mean = test_band2.apply(mean_top)
-test_band_diff = (test_band1-test_band2).apply(np.mean)
 df_test['band_1'] = df_test['band_1'].apply(process_band)
 df_test['band_2'] = df_test['band_2'].apply(process_band)
 
@@ -74,23 +53,14 @@ df_train['band_2'] = df_train['band_2'].apply(lambda x: norm(x, minv, maxv))
 df_test['band_1'] = df_test['band_1'].apply(lambda x: norm(x, minv, maxv))
 df_test['band_2'] = df_test['band_2'].apply(lambda x: norm(x, minv, maxv))
 
-extra_train = np.stack([train_band1_mean, train_band2_mean,
-                        train_band_diff]).astype(np.float32).T
-extra_test = np.stack([test_band1_mean, test_band2_mean,
-                       test_band_diff]).astype(np.float32).T
-
-sc = StandardScaler()
-extra_train = sc.fit_transform(extra_train)
-extra_test = sc.transform(extra_test)
-
 file_train = data_dir + 'train.npz'
 file_test = data_dir + 'test.npz'
 
 print('saving train data...')
 img = pack_imgs(df_train)
 label = df_train['is_iceberg'].values.astype(np.float32)
-np.savez(file_train, img=img, extra=extra_train, label=label)
+np.savez(file_train, img=img, label=label)
 
 print('saving test data...')
 img = pack_imgs(df_test)
-np.savez(file_test, img=img, extra=extra_test, ID=df_test['id'].values)
+np.savez(file_test, img=img, ID=df_test['id'].values)
