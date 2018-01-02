@@ -59,7 +59,7 @@ file_test = data_dir + 'test.npz'
 print('saving train data...')
 img = pack_imgs(df_train)
 label = df_train['is_iceberg'].values.astype(np.float32)
-np.savez(file_train, img=img, label=label)
+np.savez(file_train, img=img, label=label, ID=df_train['id'].values)
 
 print('saving test data...')
 img = pack_imgs(df_test)

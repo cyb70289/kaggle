@@ -35,6 +35,7 @@ def parse_args():
                         ['densenet', 'simplenet'])
     parser.add_argument('--augment', action='store_true', help='Test augment')
     parser.add_argument('--submit-file', default='dataset/submit.csv')
+    parser.add_argument('--report-file', default='dataset/report.csv')
     return parser.parse_args()
 
 
@@ -55,14 +56,9 @@ def get_model(args):
 def get_samples(args):
     f = np.load(args.test_file)
 
-    if args.validate:
-        y_true = f['label']
-        ID = None
-        n_samples = y_true.shape[0]
-    else:
-        ID = f['ID']
-        y_true = None
-        n_samples = ID.shape[0]
+    ID = f['ID']
+    y_true = f['label'] if args.validate else None
+    n_samples = ID.shape[0]
 
     LOG.info('Get {} test samples'.format(n_samples))
     return n_samples, y_true, ID
@@ -75,13 +71,26 @@ def show_validate(y_true, y_pred):
     print('loss: {:.4f}, acc: {:.0f}%'.format(loss, acc*100))
 
 
+def save_report(report_file, y_true, y_pred, ID):
+    df = pd.DataFrame()
+    df['is_iceberg'] = y_true
+    df['predict'] = y_pred
+    df.to_csv(report_file, index=False, float_format='%.4f')
+    # print top 10 divergence
+    diff = y_true - y_pred
+    idx = diff.argsort()
+    LOG.debug('truth = ship: {}'.format(ID[idx[:10]]))
+    LOG.debug('%.2f '*10 % tuple(diff[idx[:10]]))
+    LOG.debug('truth = iceberg: {}'.format(ID[idx[:-11:-1]]))
+    LOG.debug('%.2f'*10 % tuple(diff[idx[:-11:-1]]))
+
 def predict_epoch(args, model, loader, n_samples):
     model.eval()
 
     n = 0
     y_pred = np.empty(n_samples)
 
-    for X_img, _, _ in tqdm(loader):
+    for X_img, _ in tqdm(loader):
         X_img = Variable(X_img, volatile=True, requires_grad=False)
         if args.cuda:
             X_img = X_img.cuda(async=True)
@@ -144,6 +153,8 @@ def predict(args):
         submit['is_iceberg'] = y_pred
         submit.to_csv(args.submit_file, index=False, float_format='%.9f')
         print('{} ready to submit!'.format(args.submit_file))
+    else:
+        save_report(args.report_file, y_true, y_pred, ID)
 
 
 if __name__ == '__main__':
