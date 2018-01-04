@@ -1,0 +1,24 @@
+Train
+=====
+
+$ python train.py --seed 19
+
+
+Predict
+=======
+
+predict with single model
+-------------------------
+$ python predict.py --test-file dataset/test.npz --model-file saved-models/simplenet/best-save/best-0.1534.pt --augment
+
+predict with cv models
+----------------------
+$ python predict.py --test-file dataset/test.npz --cv-path saved-models/simplenet/cv-save/1/ --augment
+
+validate
+--------
+$ python predict.py --test-file dataset/train.npz --validate --model-file saved-models/simplenet/best-save/best-0.1534.pt --augment
+
+predict only true test samples
+------------------------------
+$ python predict.py --test-file dataset/test-true.npz --model-file saved-models/simplenet/best-save/best-0.1534.pt --augment --submit-file submit-true.csv

@@ -84,25 +84,33 @@ def save_report(report_file, y_true, y_pred, ID):
     LOG.debug('truth = iceberg: {}'.format(ID[idx[:-11:-1]]))
     LOG.debug('%.2f'*10 % tuple(diff[idx[:-11:-1]]))
 
-def predict_epoch(args, model, loader, n_samples):
+
+def predict_epoch(args, model, loaders, n_samples):
     model.eval()
 
-    n = 0
-    y_pred = np.empty(n_samples)
+    augs = len(loaders)
+    if augs > 1:
+        LOG.info('Test with {} augments'.format(augs))
 
-    for X_img, _ in tqdm(loader):
-        X_img = Variable(X_img, volatile=True, requires_grad=False)
-        if args.cuda:
-            X_img = X_img.cuda(async=True)
-        predict = F.sigmoid(model(X_img))
-        predict = predict.data.cpu().numpy()
+    y_pred = np.empty((augs, n_samples))
 
-        sz = X_img.size(0)
-        y_pred[n:n+sz] = predict.squeeze()
-        n += sz
+    for i, loader in enumerate(loaders):
+        n = 0
 
-    assert(n == n_samples)
-    return y_pred
+        for X_img, _ in tqdm(loader):
+            X_img = Variable(X_img, volatile=True, requires_grad=False)
+            if args.cuda:
+                X_img = X_img.cuda(async=True)
+            predict = F.sigmoid(model(X_img))
+            predict = predict.data.cpu().numpy()
+
+            sz = X_img.size(0)
+            y_pred[i, n:n+sz] = predict.squeeze()
+            n += sz
+
+        assert(n == n_samples)
+
+    return y_pred.mean(0)
 
 
 def predict(args):
@@ -114,8 +122,8 @@ def predict(args):
     w_wo = 'w/' if args.augment else 'w/o'
     LOG.info('Predicting by {}, {} test augment'.format(args.model, w_wo))
 
-    loader = StatoilTestLoader(args.test_file, args.batch_size,
-                               test_aug=args.augment)()
+    loaders = StatoilTestLoader(args.test_file, args.batch_size,
+                                test_aug=args.augment)()
 
     n_samples, y_true, ID = get_samples(args)
 
@@ -135,7 +143,7 @@ def predict(args):
         model = get_model(args)
         for model_file in model_files:
             model.load_state_dict(torch.load(model_file))
-            y_pred1 = predict_epoch(args, model, loader, n_samples)
+            y_pred1 = predict_epoch(args, model, loaders, n_samples)
             if args.validate:
                 show_validate(y_true, y_pred1)
             y_pred += y_pred1
@@ -143,7 +151,7 @@ def predict(args):
     else:
         model = get_model(args)
         model.load_state_dict(torch.load(args.model_file))
-        y_pred = predict_epoch(args, model, loader, n_samples)
+        y_pred = predict_epoch(args, model, loaders, n_samples)
         if args.validate:
             show_validate(y_true, y_pred)
  

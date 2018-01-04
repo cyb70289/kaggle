@@ -14,17 +14,16 @@ LOGLEVEL = (('debug', logging.DEBUG),
             ('warn', logging.WARN),
             ('error', logging.ERROR))
 
+
 ############################################################
 # image augmentation
 # - imgae shape: H x W x C
 ############################################################
 
 class StatoilAugRot90(object):
-    ROT90 = 1
-    ROT180 = 2
-    ROT270 = 3
 
     def __init__(self, mode=None):
+        """ mode = 1,2,3 -> rotate 90,180,270 """
         self.mode = mode
 
     # img shape: H * W * C
@@ -115,10 +114,10 @@ class StatoilTestData(Dataset):
 class StatoilDataStride(Dataset):
     """ Interface to DataLoader. Reindex to actual datasets. """
 
-    def __init__(self, dataset, indices):
+    def __init__(self, dataset, indices, aug=[]):
         self.dataset = dataset
         self.indices = indices
-        self.aug = []
+        self._set_augment(aug)
 
     def _set_augment(self, aug):
         if isinstance(aug, list):
@@ -140,7 +139,9 @@ class StatoilDataStride(Dataset):
 
 
 class StatoilTrainSplitter(object):
-    """ Split dataset for train and validation, or cross validataion """
+    """ Split dataset for train and validation, or cross validataion.
+        One stride attachs to one DataLoader.
+    """
 
     def __init__(self, dataset):
         self.dataset = dataset
@@ -220,14 +221,25 @@ class StatoilTestLoader(object):
         self.batch_size = batch_size
         self.n_workers = n_workers
         dataset = StatoilTestData(test_npz)
+
+        indices = np.arange(len(dataset))
+        self.strides = []
+        self.strides.append(StatoilDataStride(dataset, indices))
         if test_aug:
-            raise NotImplementedError
-        else:
-            self.stride = StatoilDataStride(dataset, np.arange(len(dataset)))
+            self.strides.append(StatoilDataStride(dataset, indices,
+                                                  StatoilAugRot90(1)))
+            self.strides.append(StatoilDataStride(dataset, indices,
+                                                  StatoilAugRot90(2)))
+            self.strides.append(StatoilDataStride(dataset, indices,
+                                                  StatoilAugRot90(3)))
 
     def __call__(self):
-        return DataLoader(self.stride, batch_size=self.batch_size,
-                          num_workers=self.n_workers, shuffle=False)
+        loaders = []
+        for stride in self.strides:
+            loader = DataLoader(stride, batch_size=self.batch_size,
+                                num_workers=self.n_workers, shuffle=False)
+            loaders.append(loader)
+        return loaders
 
 
 ############################################################
