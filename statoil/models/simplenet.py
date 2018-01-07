@@ -13,10 +13,14 @@ class _ConvLayer(nn.Sequential):
             # conv + relu + pool
             if not isinstance(channels_lst, (list, tuple)):
                 channels_lst = [channels_lst]
+            add_bn = len(channels_lst) > 1
             for j, channels in enumerate(channels_lst, 1):
                 self.add_module('conv{}-{}'.format(i, j),
                                 nn.Conv2d(n_channels, channels, 3, padding=1,
                                           bias=False))
+                if add_bn:
+                    self.add_module('norm{}-{}'.format(i, j),
+                                    nn.BatchNorm2d(channels))
                 self.add_module('relu{}-{}'.format(i, j),
                                 nn.ReLU(inplace=True))
                 n_channels = channels
@@ -70,7 +74,7 @@ class SimpleNet(nn.Module):
         y = self.conv_layer(X_img)
         # global pool
         poolsize = y.size()[-2:]
-        y = F.max_pool2d(y, poolsize)
+        y = F.avg_pool2d(y, poolsize)
         y = y.view(y.size(0), -1)
         y = F.relu(y)
         # fc

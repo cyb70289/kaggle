@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
-    parser.add_argument('--max-epochs', type=int, metavar='N', default=999)
+    parser.add_argument('--max-epochs', type=int, metavar='N', default=1666)
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--model', default='simplenet', choices=
                         ['densenet', 'simplenet'])
@@ -76,7 +76,7 @@ def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
     acc_sum = 0.0
     count = 0
 
-    bar_desc = '{:03d}/{:03d}'.format(epoch+1, max_epochs)
+    bar_desc = '{:d}/{:d}'.format(epoch+1, max_epochs)
     bar_format = '{l_bar}{bar}| {remaining}{postfix}'
     bar_postfix = '------,---, ------,---'
     pbar = tqdm(total=len(train_loader), desc=bar_desc, bar_format=bar_format)
@@ -179,7 +179,7 @@ def train(args):
             else:
                 no_improve_count += 1
 
-            if no_improve_count > 200:
+            if no_improve_count > 333:
                 LOG.info('Early stopping')
                 break
 
