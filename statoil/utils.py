@@ -283,9 +283,10 @@ class LRSchedDecay(LRSchedNone):
     def __init__(self, param_groups, lr, decay, lr_min=0.0):
         super(LRSchedDecay, self).__init__(param_groups, lr)
         self.decay = decay
+        self.lr_min = lr_min
 
     def update(self, loss):
-        if self.lr > lr_min:
-            lr = min(self.lr*self.decay, lr_min)
+        if self.lr > self.lr_min:
+            lr = max(self.lr*self.decay, self.lr_min)
             self.set_lr(lr)
             LOG.debug('Update learning rate to {:.5f}'.format(lr))
