@@ -36,6 +36,8 @@ def parse_args():
     parser.add_argument('--cv', type=int, default=None, help='CV folds')
     parser.add_argument('--batch-size', type=int, metavar='N', default=64)
     parser.add_argument('--max-epochs', type=int, metavar='N', default=1666)
+    parser.add_argument('--stop-count', type=int, metavar='N', default=333,
+                        help='Early stop count')
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--model', default='simplenet', choices=
                         ['densenet', 'simplenet'])
@@ -56,11 +58,16 @@ def get_model(args):
     lossf = nn.BCEWithLogitsLoss(size_average=False)
     optimizer = optim.Adam(model.param_options(), weight_decay=args.l2)
 
+    if args.model == 'simplenet':
+        lrsched = LRSchedNone(optimizer.param_groups, 0.5e-3)
+    elif args.model == 'densenet':
+        lrsched = LRSchedNone(optimizer.param_groups, 1e-4)
+
     if args.cuda:
         model.cuda()
         lossf.cuda()
 
-    return model, lossf, optimizer, model_path
+    return model, lossf, optimizer, lrsched, model_path
 
 
 def train_epoch(args, model, lossf, optimizer, train_loader, dev_loader,
@@ -157,14 +164,13 @@ def train(args):
 
     for i, (train_loader, dev_loader) in enumerate(loader, 1):
         LOG.info('-'*60)
-        model, lossf, optimizer, model_path = get_model(args)
+        model, lossf, optimizer, lrsched, model_path = get_model(args)
 
         model_file = 'cv{}'.format(i) if args.cv else 'best'
         model_file = os.path.join(model_path, model_file)
 
         no_improve_count = 0
         dev_loss_min = 99.99
-        lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
 
         for epoch in range(args.max_epochs):
             train_loss, dev_loss = train_epoch(args, model, lossf, optimizer,
@@ -179,7 +185,7 @@ def train(args):
             else:
                 no_improve_count += 1
 
-            if no_improve_count > 333:
+            if no_improve_count > args.stop_count:
                 LOG.info('Early stopping')
                 break
 

@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import cv2
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.sampler import Sampler, SubsetRandomSampler
@@ -34,7 +35,47 @@ class StatoilAugRot90(object):
         return np.rot90(img, mode)
 
 
-# XXX: not used
+class StatoilAugRotate(object):
+
+    def __init__(self, angle=(-15, 15)):
+        self.angle = angle
+
+    def __call__(self, img):
+        angle = np.random.randint(*self.angle)
+        h, w = img.shape[:2]
+        M = cv2.getRotationMatrix2D((w/2, h/2), angle, 1)
+        img2 = cv2.warpAffine(img, M, (w, h), borderValue=-999)
+        # fix border
+        idx = img2 == -999
+        img2[idx] = img[idx]
+        return img2
+
+
+class StatoilAugResize(object):
+
+    def __init__(self, ratio=(0.9, 1)):
+        self.ratio = ratio
+
+    def __call__(self, img):
+        ratio = np.random.rand()
+        ratio *= (self.ratio[1] - self.ratio[0])
+        ratio += self.ratio[0]
+        h, w = img.shape[:2]
+        h2, w2 = int(h*ratio), int(w*ratio)
+        interp = cv2.INTER_AREA if ratio < 1 else cv2.INTER_LINEAR
+        img2 = cv2.resize(img, (w2, h2), interpolation=interp)
+        # fit to original size
+        hgap, wgap = (h-h2)//2, (w-w2)//2
+        if hgap > 0:
+            img3 = img.copy()
+            img3[hgap:hgap+h2, wgap:wgap+w2] = img2
+        elif hgap < 0:
+            img3 = img2[-hgap:-hgap+h, -wgap:-wgap+w]
+        else:
+            img3 = img
+        return img3
+
+
 class StatoilAugShift(object):
 
     def __init__(self, delta=(6,6)):
@@ -57,23 +98,12 @@ class StatoilAugShift(object):
         return augimg
 
 
-# XXX: not used
 class StatoilAugFlip(object):
-    VERTICAL = 1
-    HORIZONTAL = 2
-    BOTH = 3
-
-    def __init__(self, mode=None):
-        self.mode = mode
+    """ only flip over horizontal axis """
 
     def __call__(self, img):
-        mode = self.mode
-        if mode is None:
-            mode = np.random.randint(0, 4)
-        if mode & 1:
+        if np.random.randint(0, 2) == 1:
             img = np.flip(img, 0)
-        if mode & 2:
-            img = np.flip(img, 1)
         return img
 
 
@@ -181,7 +211,8 @@ class StatoilTrainLoader(object):
         self.n_workers = n_workers
         self.train_aug = []
         if train_aug:
-            self.train_aug = [StatoilAugRot90()]
+            self.train_aug = [StatoilAugFlip(), StatoilAugRot90(),
+                              StatoilAugShift()]
 
         dataset = StatoilTrainData(train_npz)
         self.splitter = StatoilTrainSplitter(dataset)

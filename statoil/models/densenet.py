@@ -82,6 +82,7 @@ class _OutputLayer(nn.Module):
         y = F.avg_pool2d(x, poolsize)
         # flatten
         y = y.view(y.size(0), -1)
+        y = F.relu(y)
         # linear
         y = self.nn_linear(y)
         return y

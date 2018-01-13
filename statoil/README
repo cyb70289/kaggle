@@ -3,6 +3,9 @@ Train
 
 $ python train.py --seed 19
 
+$ python train.py --seed 19 --model densenet --l2 1.0 --max-epochs 500 \
+                  --stop-count 80
+
 
 Predict
 =======
