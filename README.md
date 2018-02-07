@@ -2,3 +2,5 @@
 
 * Bronze medal (299/3343)
 * CNN, DenseNet, PyTorch
+
+### [Toxic Comment Classification Challenge](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge)
