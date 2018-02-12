@@ -5,7 +5,7 @@ import nltk
 import tqdm
 
 
-max_sentence_length = 200
+sentence_length = 200
 
 
 def tokenize_sentences(sentences, word_to_token):
@@ -22,7 +22,6 @@ def tokenize_sentences(sentences, word_to_token):
             token = word_to_token[word]
             result.append(token)
         tokenized_sentences.append(result)
-
     return tokenized_sentences, word_to_token
 
 
@@ -43,23 +42,23 @@ def load_embedding_list(file_path, word_to_token):
 
 
 def token_to_embedding(tokenized_sentences, token_to_word,
-                       word_to_embed, max_sentence_length):
+                       word_to_embed, sentence_length):
+    unknown_idx = len(word_to_embed)
+    end_idx = unknown_idx + 1
+
     words_train = []
     for sentence in tokenized_sentences:
         current_words = []
-        l = 0
-        for token in sentence:
+        for l, token in enumerate(sentence, 1):
             word = token_to_word[token]
-            embed = word_to_embed.get(word, -1)
-            if embed != -1:
-                current_words.append(embed)
-                l += 1
-            if l == max_sentence_length:
+            embed_idx = word_to_embed.get(word, unknown_idx)
+            current_words.append(embed_idx)
+            if l == sentence_length:
                 break
-        if l == 0:
-            current_words = [len(word_to_embed)]    # unknown
-        words_train.append(current_words)
 
+        if l < sentence_length:
+            current_words += [end_idx] * (sentence_length - l)
+        words_train.append(current_words)
     return words_train
 
 
@@ -80,6 +79,7 @@ embedding_list, word_to_embed = load_embedding_list('dataset/word.vec',
                                                     word_to_token)
 embedding_size = len(embedding_list[0])
 embedding_list.append(np.zeros(embedding_size, dtype=np.float32))   # unknown
+embedding_list.append(-np.ones(embedding_size, dtype=np.float32))   # end
 
 token_to_word = {token: word for word, token in word_to_token.items()}
 del word_to_token
@@ -89,13 +89,13 @@ train_embedding = token_to_embedding(
     tokenized_sentences_train,
     token_to_word,
     word_to_embed,
-    max_sentence_length)
+    sentence_length)
 
 test_embedding = token_to_embedding(
     tokenized_sentences_test,
     token_to_word,
     word_to_embed,
-    max_sentence_length)
+    sentence_length)
 
 np.savez('dataset/text-embedding.npz', train_embedding=train_embedding,
          test_embedding=test_embedding, embedding_list=embedding_list)
