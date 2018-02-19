@@ -43,21 +43,22 @@ def load_embedding_list(file_path, word_to_token):
 
 def token_to_embedding(tokenized_sentences, token_to_word,
                        word_to_embed, sentence_length):
-    unknown_idx = len(word_to_embed)
-    end_idx = unknown_idx + 1
-
     words_train = []
     for sentence in tokenized_sentences:
         current_words = []
-        for l, token in enumerate(sentence, 1):
+        for token in sentence:
             word = token_to_word[token]
-            embed_idx = word_to_embed.get(word, unknown_idx)
-            current_words.append(embed_idx)
-            if l == sentence_length:
-                break
+            embed_idx = word_to_embed.get(word, -1)
+            # skip unknown words
+            if embed_idx != -1:
+                current_words.append(embed_idx)
+                if len(current_words) == sentence_length:
+                    break
 
-        if l < sentence_length:
-            current_words += [end_idx] * (sentence_length - l)
+        # padding to same length
+        end_idx = len(word_to_embed)
+        if len(current_words) < sentence_length:
+            current_words += [end_idx] * (sentence_length - len(current_words))
         words_train.append(current_words)
     return words_train
 
@@ -78,8 +79,7 @@ print('Loading embeddings...')
 embedding_list, word_to_embed = load_embedding_list('dataset/word.vec',
                                                     word_to_token)
 embedding_size = len(embedding_list[0])
-embedding_list.append(np.zeros(embedding_size, dtype=np.float32))   # unknown
-embedding_list.append(-np.ones(embedding_size, dtype=np.float32))   # end
+embedding_list.append(np.zeros(embedding_size, dtype=np.float32))   # end
 
 token_to_word = {token: word for word, token in word_to_token.items()}
 del word_to_token
