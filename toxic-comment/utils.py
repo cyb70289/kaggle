@@ -51,7 +51,6 @@ class ToxicDataStride(Dataset):
         self.dataset = dataset
         self.indices = indices
         self.embedding_list = embedding_list
-        self.embedding_size = len(embedding_list[0])
 
     def __len__(self):
         return len(self.indices)
@@ -70,10 +69,10 @@ class ToxicTrainSplitter(object):
         self.indices = np.load(split_file)['indices']
 
     def split(self):
-        train_indices = self.indices[0]
-        valid_indices = []
+        valid_indices = self.indices[0]
+        train_indices = []
         for indices in self.indices[1:]:
-            valid_indices += indices
+            train_indices += indices
         train_stride = ToxicDataStride(self.dataset, train_indices,
                                        self.embedding_list)
         valid_stride = ToxicDataStride(self.dataset, valid_indices,
@@ -82,11 +81,11 @@ class ToxicTrainSplitter(object):
 
     def kfold(self):
         for i in range(len(self.indices)):
-            train_indices = self.indices[i]
-            valid_indices = []
+            valid_indices = self.indices[i]
+            train_indices = []
             for j in range(len(self.indices)):
                 if j != i:
-                    valid_indices += self.indices[j]
+                    train_indices += self.indices[j]
             train_stride = ToxicDataStride(self.dataset, train_indices,
                                            self.embedding_list)
             valid_stride = ToxicDataStride(self.dataset, valid_indices,
@@ -96,14 +95,14 @@ class ToxicTrainSplitter(object):
 
 class ToxicTrainLoader(object):
 
-    def __init__(self, batch_size=64, cv=False, n_workers=0):
+    def __init__(self, batch_size, cv, n_workers=0):
         self.batch_size = batch_size
         self.cv = cv
         self.n_workers = n_workers
 
         embedding_npz = np.load(_embedding_file)
         train_embedding = embedding_npz['train_embedding']
-        embdding_list = embedding_npz['embedding_list']
+        embedding_list = embedding_npz['embedding_list']
 
         dataset = ToxicTrainData(_train_file, train_embedding)
         self.splitter = ToxicTrainSplitter(dataset, _split_file, embedding_list)
@@ -147,3 +146,53 @@ def ToxicTestLoader(object):
     def __call__(self):
         return DataLoader(self.stride, batch_size=self.batch_size,
                           num_workers=self.n_workers, shuffle=False)
+
+
+############################################################
+# learning rate scheduler
+############################################################
+
+class LRSchedNone(object):
+    """ No learning rate adjustment """
+
+    def __init__(self, param_groups, lr):
+        self.param_groups = param_groups
+        self.set_lr(lr)
+
+    def set_lr(self, lr):
+        for param_group in self.param_groups:
+            param_group['lr'] = lr
+        self.lr = lr
+
+    def update(self, loss):
+        pass
+
+
+class LRSchedStep(LRSchedNone):
+    """ Learning rate scheduler based on predefine (loss, lr) pairs """
+
+    def __init__(self, param_groups, lr, *steps):
+        super(LRSchedStep, self).__init__(param_groups, lr)
+        self.steps = steps
+
+    def update(self, loss):
+        for step_loss, step_lr in self.steps:
+            # update lr if loss below threshold
+            if loss < step_loss and self.lr > step_lr:
+                self.set_lr(step_lr)
+                LOG.info('Update learning rate to {:.5f}'.format(step_lr))
+
+
+class LRSchedDecay(LRSchedNone):
+    """ Learning rate decay on each epoch """
+
+    def __init__(self, param_groups, lr, decay, lr_min=0.0):
+        super(LRSchedDecay, self).__init__(param_groups, lr)
+        self.decay = decay
+        self.lr_min = lr_min
+
+    def update(self, loss):
+        if self.lr > self.lr_min:
+            lr = max(self.lr*self.decay, self.lr_min)
+            self.set_lr(lr)
+            LOG.debug('Update learning rate to {:.5f}'.format(lr))
