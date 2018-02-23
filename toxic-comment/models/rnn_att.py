@@ -27,10 +27,10 @@ class RnnAtt(nn.Module):
             self.rnn = nn.GRU(embed_dim, self.hidden_dim, num_layers=1,
                               batch_first=True, bidirectional=self.bidir)
         else:
-            raise(ValueError)
+            raise ValueError
 
         if self.atten:
-            raise(NotImplemented)
+            raise NotImplemented
         else:
             self.fc = nn.Linear(self.hidden_dim*text_len*(self.bidir+1),
                                 n_classes)

@@ -11,15 +11,12 @@ from torch.autograd import Variable
 from models.rnn_att import RnnAtt
 import utils
 from utils import ToxicTrainLoader, LRSchedNone
+import preprocess
 
 
 _model_path = './saved-models/'
-_n_classes = 6
+_n_classes = len(preprocess.y_names)
 
-LOGLEVEL = (('debug', logging.DEBUG),
-            ('info', logging.INFO),
-            ('warn', logging.WARN),
-            ('error', logging.ERROR))
 LOG = logging.getLogger(__name__)
 
 tqdm.monitor_interval = 0
@@ -35,9 +32,9 @@ def init_random_seed(seed, cuda):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--max-epochs', type=int, default=666)
-    parser.add_argument('--stop-count', type=int, default=66,
+    parser.add_argument('--batch-size', type=int, default=1024)
+    parser.add_argument('--max-epochs', type=int, default=30)
+    parser.add_argument('--stop-count', type=int, default=3,
                         help='Early stop count')
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--cv', action='store_true')
@@ -48,7 +45,7 @@ def parse_args():
     parser.add_argument('--bidirectional', action='store_true')
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--loglevel', default='info',
-                        choices=[x[0] for x in LOGLEVEL])
+                        choices=[x[0] for x in utils.LOGLEVEL])
     return parser.parse_args()
 
 
@@ -132,7 +129,10 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
 
         loss_sum += output.data[0] * y.size(0)
         loss = loss_sum / y_cnt
-        auc = roc_auc_score(y_true[:y_cnt], y_score[:y_cnt])
+        try:
+            auc = roc_auc_score(y_true[:y_cnt], y_score[:y_cnt])
+        except ValueError:
+            auc = 0.0
 
         postfix = '{:.4f},{:.4f}, ------,------'.format(loss, auc)
         pbar.set_postfix_str(postfix)
@@ -180,13 +180,13 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
         train_loss, train_auc, valid_loss, valid_auc)
     pbar.set_postfix_str(postfix)
 
-    return train_loss, valid_loss
+    return valid_auc
 
 
 def train(args):
     LOG.info('Training model: {}'.format(args.rnn_model))
 
-    loss_lst = []
+    auc_lst = []
     loader = ToxicTrainLoader(args.batch_size, args.cv)()
 
     for i, (train_loader, valid_loader) in enumerate(loader, 1):
@@ -197,17 +197,17 @@ def train(args):
         model_file = os.path.join(model_path, model_file)
 
         no_improve_count = 0
-        valid_loss_min = 999999
+        valid_auc_min = 0.0
 
         for epoch in range(args.max_epochs):
-            train_loss, valid_loss = train_epoch(args, model, lossf, optimizer,
-                                                 train_loader, valid_loader,
-                                                 epoch, args.max_epochs)
-            if valid_loss < valid_loss_min:
+            valid_auc = train_epoch(args, model, lossf, optimizer,
+                                    train_loader, valid_loader,
+                                    epoch, args.max_epochs)
+            if valid_auc > valid_auc_min:
                 torch.save(model.state_dict(), model_file)
-                LOG.info('Model saved: {}, valid_loss: {:.4f}'.format(
-                    model_file, valid_loss))
-                valid_loss_min = valid_loss
+                LOG.info('Model saved: {}, valid_auc: {:.4f}'.format(
+                    model_file, valid_auc))
+                valid_auc_min = valid_auc
                 no_improve_count = 0
             else:
                 no_improve_count += 1
@@ -216,25 +216,25 @@ def train(args):
                 LOG.info('Early stopping')
                 break
 
-            lrsched.update(valid_loss)
+            lrsched.update(valid_auc)
 
-        model_file2 = '{}-{:.4f}.pt'.format(model_file, valid_loss_min)
+        model_file2 = '{}-{}-{:.4f}.pt'.format(model_file, args.text_len,
+                                               valid_auc_min)
         os.rename(model_file, model_file2)
 
-        loss_lst.append(valid_loss_min)
+        auc_lst.append(valid_auc_min)
 
     LOG.info('='*60)
-    LOG.info('Loss: {}'.format(list(map(lambda x: '{:.4f}'.format(x),
-                                        loss_lst))))
+    LOG.info('AUC: {}'.format(list(map(lambda x: '{:.4f}'.format(x), auc_lst))))
     if args.cv:
-        LOG.info('Loss mean: {:.4f}, stdev: {:.4f}'.format(np.mean(loss_lst),
-                                                           np.std(loss_lst)))
+        LOG.info('AUC mean: {:.4f}, stdev: {:.4f}'.format(np.mean(auc_lst),
+                                                          np.std(auc_lst)))
 
 
 if __name__ == '__main__':
     args = parse_args()
 
-    logging.basicConfig(level = dict(LOGLEVEL)[args.loglevel])
+    logging.basicConfig(level = dict(utils.LOGLEVEL)[args.loglevel])
 
     args.cuda = torch.cuda.is_available()
     LOG.debug('Train on {}'.format('GPU' if args.cuda else 'CPU'))

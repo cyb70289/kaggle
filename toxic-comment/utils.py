@@ -4,6 +4,11 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 
+LOGLEVEL = (('debug', logging.DEBUG),
+            ('info', logging.INFO),
+            ('warn', logging.WARN),
+            ('error', logging.ERROR))
+
 LOG = logging.getLogger(__name__)
 
 _train_file = 'dataset/train.npz'
@@ -35,10 +40,9 @@ class ToxicTestData(Dataset):
         self.text = test_embedding
         test_npz = np.load(test_file)
         self.X = test_npz['X'].astype(np.float32)
-        self.id = test_npz['id']
 
     def __len__(self):
-        return len(self.id)
+        return len(self.X)
 
     def __getitem__(self, idx):
         return self.text[idx], self.X[idx], 0
@@ -129,17 +133,21 @@ class ToxicTrainLoader(object):
             yield train_loader, valid_loader
 
 
-def ToxicTestLoader(object):
+class ToxicTestLoader(object):
 
-    def __init__(self, batch_size=64, n_workers=0):
+    def __init__(self, batch_size, n_workers=0, validate=False):
         self.batch_size = batch_size
         self.n_workers = n_workers
 
         embedding_npz = np.load(_embedding_file)
+        train_embedding = embedding_npz['train_embedding']
         test_embedding = embedding_npz['test_embedding']
-        embdding_list = embedding_npz['embedding_list']
+        embedding_list = embedding_npz['embedding_list']
 
-        dataset = ToxicTestData(_test_file, test_embedding)
+        if validate:
+            dataset = ToxicTestData(_train_file, train_embedding)
+        else:
+            dataset = ToxicTestData(_test_file, test_embedding)
         indices = np.arange(len(dataset))
         self.stride = ToxicDataStride(dataset, indices, embedding_list)
 
@@ -164,7 +172,7 @@ class LRSchedNone(object):
             param_group['lr'] = lr
         self.lr = lr
 
-    def update(self, loss):
+    def update(self, loss, **kwargs):
         pass
 
 
@@ -175,10 +183,12 @@ class LRSchedStep(LRSchedNone):
         super(LRSchedStep, self).__init__(param_groups, lr)
         self.steps = steps
 
-    def update(self, loss):
+    def update(self, loss, **kwargs):
+        maximize = kwargs.get('maximize', False)
         for step_loss, step_lr in self.steps:
-            # update lr if loss below threshold
-            if loss < step_loss and self.lr > step_lr:
+            adjust_needed = (maximize and loss > step_loss) or \
+                ((not maximize) and loss < step_loss)
+            if adjust_needed and self.lr > step_lr:
                 self.set_lr(step_lr)
                 LOG.info('Update learning rate to {:.5f}'.format(step_lr))
 
@@ -191,7 +201,7 @@ class LRSchedDecay(LRSchedNone):
         self.decay = decay
         self.lr_min = lr_min
 
-    def update(self, loss):
+    def update(self, loss, **kwargs):
         if self.lr > self.lr_min:
             lr = max(self.lr*self.decay, self.lr_min)
             self.set_lr(lr)
