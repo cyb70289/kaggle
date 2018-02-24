@@ -1,0 +1,37 @@
+Prepare data
+============
+
+- create directory "dataset/"
+- copy train.csv, test.csv to "dataset/"
+- download [crawl-300d-2M.vec.zip](https://s3-us-west-1.amazonaws.com/fasttext-vectors/crawl-300d-2M.vec.zip)
+- extract crawl-300d-2M.vec under "dataset/" and rename to "word.vec"
+
+
+Preprocess
+==========
+
+$ python preprocess.py
+
+
+Train
+=====
+
+$ python train.py
+
+$ python train.py --text-len 64 --rnn-model lstm ...
+
+
+Predict
+======
+
+predict with single model
+-------------------------
+$ python predict.py --model-file saved-models/gru/single/best.pt
+
+predict with cv models
+----------------------
+$ python predict.py --cv-path saved-models/gru/cv/
+
+validate
+--------
+$ python predict.py --validate --model-file saved-models/gru/single/best.pt
