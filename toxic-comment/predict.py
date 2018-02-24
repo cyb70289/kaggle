@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--bidirectional', action='store_true')
     parser.add_argument('--cv-path', help='Directory contains CV models')
     parser.add_argument('--model-file', help='Best single model file')
-    parser.add_argument('--submit-file', default='dataset/submit.csv')
+    parser.add_argument('--submit-file', default='dataset/submit.csv.gz')
     parser.add_argument('--validate', action='store_true',
                         help='Use train file for validation')
     parser.add_argument('--loglevel', default='info',
@@ -83,7 +83,10 @@ def get_model(args):
 
 
 def show_validate(y_true, y_pred):
-    loss = log_loss(y_true, y_pred)
+    loss = 0.0
+    for c in range(y_true.shape[1]):
+        loss += log_loss(y_true[:, c], y_pred[:, c], eps=1e-7)
+    loss /= y_true.shape[1]
     auc = roc_auc_score(y_true, y_pred)
     print('loss: {:.4f}, auc: {:.4f}'.format(loss, auc))
 
@@ -152,7 +155,9 @@ def predict(args):
     if not args.validate:
         submit = pd.DataFrame(columns=preprocess.y_names, data=y_pred)
         submit.insert(0, 'id', id)
-        submit.to_csv(args.submit_file, index=False, float_format='%.9f')
+        compression = 'gzip' if args.submit_file.endswith('.gz') else None
+        submit.to_csv(args.submit_file, index=False, float_format='%.9f',
+                      compression=compression)
         print('{} ready to submit!'.format(args.submit_file))
 
 
