@@ -4,6 +4,7 @@ import re
 import argparse
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
 
 
 y_names = ['toxic', 'severe_toxic', 'obscene',
@@ -23,7 +24,7 @@ if __name__ == '__main__':
     def gen_X(df):
         # columns: comment_len, bang_cnt, capital_ratio
         X = np.empty((df.shape[0], 3), dtype=np.float32)
-        X[:, 0] = df['comment_text'].apply(len)
+        X[:, 0] = df['comment_text'].apply(lambda x: min(len(x.split()), 200))
         X[:, 1] = df['comment_text'].apply(lambda x: min(x.count('!'), 10))
         X[:, 2] = df['comment_text'].apply(capital_ratio)
         return X
@@ -56,7 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, metavar='N', default=19)
     parser.add_argument('--splits', type=int, metavar='N', default=5)
     args = parser.parse_args()
-    np.random.seed(args.seed if args.seed else None)
+    np.random.seed(args.seed)
 
     f = 'dataset/text-embedding.npz'
     if os.path.exists(f):
@@ -77,14 +78,18 @@ if __name__ == '__main__':
     indices = do_split(df, args.splits)
     np.savez(f, indices=indices, seed=args.seed)
 
+    sc = MinMaxScaler(copy=False)
+
     print('Generating train file: dataset/train.npz')
     df = pd.read_csv('dataset/train.csv')
     X = gen_X(df)
     y = df[y_names].values.astype(np.float32)
+    sc.fit_transform(X)
     np.savez('dataset/train.npz', X=X, y=y)
 
     print('Generating test file: dataset/test.npz')
     df = pd.read_csv('dataset/test.csv')
     X = gen_X(df)
     id = df['id']
+    sc.transform(X)
     np.savez('dataset/test.npz', X=X, id=id)
