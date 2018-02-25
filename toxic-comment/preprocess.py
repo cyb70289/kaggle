@@ -64,7 +64,8 @@ if __name__ == '__main__':
         print('Text embedding exists: %s' % (f))
     else:
         print('Generating text embedding: %s' % (f))
-        subprocess.call(['python',  './text-embedding.py'])
+        rc = subprocess.call(['python',  './text-embedding.py'])
+        assert(rc == 0)
 
     f = 'dataset/train-split.npz'
     print('Splitting train and validation sets: %s' %(f))

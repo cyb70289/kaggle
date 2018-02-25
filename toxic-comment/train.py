@@ -40,8 +40,8 @@ def parse_args():
     parser.add_argument('--cv', action='store_true')
     parser.add_argument('--rnn-model', default='gru', choices= ['gru', 'lstm'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
+    parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
-    parser.add_argument('--add-attention', action='store_true')
     parser.add_argument('--bidirectional', action='store_true')
     parser.add_argument('--seed', type=int, metavar='N', help='Random seed')
     parser.add_argument('--loglevel', default='info',
@@ -65,8 +65,8 @@ def get_embedding_info(args):
 
 def get_model(args):
     model = RnnAtt(args.embed_dim, args.rnn_hidden_dim, args.text_len,
-                   _n_classes, model=args.rnn_model,
-                   bidir=args.bidirectional, atten=args.add_attention)
+                   _n_classes, model=args.rnn_model, bidir=args.bidirectional,
+                   atten=args.rnn_attention, cuda=args.cuda)
 
     model_path = os.path.join(_model_path, args.rnn_model+'/')
     os.makedirs(model_path, exist_ok=True)
@@ -105,19 +105,19 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
         model.zero_grad()
         optimizer.zero_grad()
 
-        y_true[y_cnt:y_cnt+y.size(0)] = y
+        y_true[y_cnt:y_cnt+y.size(0)] = y.numpy()
 
         text = text[:, :args.text_len, :]
         text = Variable(text, requires_grad=False)
         X = Variable(X, requires_grad=False)
         y = Variable(y, requires_grad=False)
         if args.cuda:
-            text = text.cuda(async=True)
+            text = text.contiguous().cuda(async=True)
             X = X.cuda(async=True)
             y = y.cuda(async=True)
 
         # Forward
-        predict = model(args, text, X)
+        predict = model(text, X)
         output = lossf(predict, y)
 
         # Backward
@@ -154,18 +154,18 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
     loss_sum = 0.0
 
     for text, X, y in valid_loader:
-        y_true[y_cnt:y_cnt+y.size(0)] = y
+        y_true[y_cnt:y_cnt+y.size(0)] = y.numpy()
 
         text = text[:, :args.text_len, :]
         text = Variable(text, requires_grad=False)
         X = Variable(X, requires_grad=False)
         y = Variable(y, requires_grad=False)
         if args.cuda:
-            text = text.cuda(async=True)
+            text = text.contiguous().cuda(async=True)
             X = X.cuda(async=True)
             y = y.cuda(async=True)
 
-        predict = model(args, text, X)
+        predict = model(text, X)
         output = lossf(predict, y)
 
         loss_sum += output.data[0] * y.size(0)
@@ -187,7 +187,7 @@ def train(args):
     LOG.info('Training model: {}'.format(args.rnn_model))
 
     auc_lst = []
-    loader = ToxicTrainLoader(args.batch_size, args.cv)()
+    loader = ToxicTrainLoader(args.batch_size, args.cv, 4)()
 
     for i, (train_loader, valid_loader) in enumerate(loader, 1):
         LOG.info('-'*60)

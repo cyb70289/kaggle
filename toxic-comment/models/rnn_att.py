@@ -12,12 +12,14 @@ class RnnAtt(nn.Module):
             - 'model': 'gru', 'lstm'
             - 'bidir': False, True (bidirectional)
             - 'atten': False, True (add attention)
+            - 'cuda': False, True
         '''
         super(RnnAtt, self).__init__()
 
         self.hidden_dim = hidden_dim
         self.bidir = kwargs.get('bidir', False)
         self.atten = kwargs.get('atten', False)
+        self._cuda = kwargs.get('cuda', False)
 
         model = kwargs.get('model', 'gru').lower()
         if model == 'lstm':
@@ -30,20 +32,32 @@ class RnnAtt(nn.Module):
             raise ValueError
 
         if self.atten:
-            raise NotImplemented
+            self.query_weights = nn.Parameter(
+                torch.zeros(hidden_dim*(self.bidir+1)))
+            if self._cuda:
+                self.query_weights.cuda(async=True)
+            self.fc = nn.Linear(self.hidden_dim*(self.bidir+1), n_classes)
         else:
             self.fc = nn.Linear(self.hidden_dim*text_len*(self.bidir+1),
                                 n_classes)
 
-    def forward(self, args, text, X):
+    def forward(self, text, X):
         # text: batch * sequence * embedding_dim
         h0 = Variable(torch.zeros(1+self.bidir, text.size(0), self.hidden_dim),
                       requires_grad=False)
-        if args.cuda:
+        if self._cuda:
             h0 = h0.cuda(async=True)
         out, _ = self.rnn(text, h0)
-        # flatten: batch * sequence * hidden_dim*(1+bidir) -> batch * -1
-        out = out.contiguous()
+        if self.atten:
+            # atten_weights: batch * sequence
+            atten_weights = (out * self.query_weights).sum(dim=-1)
+            atten_weights = F.softmax(atten_weights, dim=1)
+            out = out * atten_weights[..., None]
+            # out: batch * hidden_dim*(1+bidir)
+            out = out.sum(dim=1)
+        else:
+            # out: batch * sequence * hidden_dim*(1+bidir)
+            out = out.contiguous()
         out = out.view(out.size(0), -1)
         out = self.fc(out)
         # out: batch * n_classes

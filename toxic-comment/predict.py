@@ -1,4 +1,5 @@
 import os
+from utils import ToxicTestLoader
 import argparse
 import logging
 import numpy as np
@@ -34,8 +35,8 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=1024)
     parser.add_argument('--rnn-model', default='gru', choices= ['gru', 'lstm'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
+    parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
-    parser.add_argument('--add-attention', action='store_true')
     parser.add_argument('--bidirectional', action='store_true')
     parser.add_argument('--cv-path', help='Directory contains CV models')
     parser.add_argument('--model-file', help='Best single model file')
@@ -74,8 +75,8 @@ def get_samples(args):
 
 def get_model(args):
     model = RnnAtt(args.embed_dim, args.rnn_hidden_dim, args.text_len,
-                   _n_classes, model=args.rnn_model,
-                   bidir=args.bidirectional, atten=args.add_attention)
+                   _n_classes, model=args.rnn_model, bidir=args.bidirectional,
+                   atten=args.rnn_attention, cuda=args.cuda)
     if args.cuda:
         model.cuda()
 
@@ -102,10 +103,10 @@ def predict1(args, model, loader, n_samples):
         text = Variable(text, requires_grad=False)
         X = Variable(X, requires_grad=False)
         if args.cuda:
-            text = text.cuda(async=True)
+            text = text.contiguous().cuda(async=True)
             X = X.cuda(async=True)
 
-        predict = F.sigmoid(model(args, text, X))
+        predict = F.sigmoid(model(text, X))
 
         y_pred[y_cnt:y_cnt+X.size(0)] = predict.data.cpu().numpy()
         y_cnt += X.size(0)
@@ -120,7 +121,7 @@ def predict(args):
     elif args.cv_path is None and args.model_file is None:
         raise ValueError('Either "cv-path" or "model-file" must be set')
 
-    loader = ToxicTestLoader(args.batch_size, validate=args.validate)()
+    loader = ToxicTestLoader(args.batch_size, 4, validate=args.validate)()
     n_samples = len(loader.dataset)
     y_true, id = get_samples(args)
 
