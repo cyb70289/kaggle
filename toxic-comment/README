@@ -18,7 +18,7 @@ Train
 
 $ python train.py
 
-$ python train.py --text-len 64 --rnn-model lstm ...
+$ python train.py --text-len 64 --model lstm ...
 
 
 Predict

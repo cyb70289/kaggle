@@ -12,6 +12,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from models.rnn_att import RnnAtt
+from models.simple import SimpleAtt
 import utils
 from utils import ToxicTestLoader
 import preprocess
@@ -33,7 +34,8 @@ tqdm.monitor_interval = 0
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=1024)
-    parser.add_argument('--rnn-model', default='gru', choices= ['gru', 'lstm'])
+    parser.add_argument('--model', default='gru',
+                        choices= ['gru', 'lstm', 'simple'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
     parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
@@ -74,9 +76,17 @@ def get_samples(args):
 
 
 def get_model(args):
-    model = RnnAtt(args.embed_dim, args.rnn_hidden_dim, args.text_len,
-                   _n_classes, model=args.rnn_model, bidir=args.bidirectional,
-                   atten=args.rnn_attention, cuda=args.cuda)
+    if args.model == 'gru' or args.model == 'lstm':
+        model = RnnAtt(args.embed_dim, args.rnn_hidden_dim,
+                       args.text_len, _n_classes, model=args.model,
+                       bidir=args.bidirectional, atten=args.rnn_attention,
+                       cuda=args.cuda)
+    elif args.model == 'simple':
+        model = SimpleAtt(args.embed_dim, args.text_len, _n_classes,
+                          cuda=args.cuda)
+    else:
+        raise ValueError
+
     if args.cuda:
         model.cuda()
 

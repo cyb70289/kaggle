@@ -9,6 +9,7 @@ from torch import nn, optim
 from torch.autograd import Variable
 
 from models.rnn_att import RnnAtt
+from models.simple import SimpleAtt
 import utils
 from utils import ToxicTrainLoader, LRSchedNone
 import preprocess
@@ -38,7 +39,8 @@ def parse_args():
                         help='Early stop count')
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--cv', action='store_true')
-    parser.add_argument('--rnn-model', default='gru', choices= ['gru', 'lstm'])
+    parser.add_argument('--model', default='gru',
+                        choices= ['gru', 'lstm', 'simple'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
     parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
@@ -64,11 +66,18 @@ def get_embedding_info(args):
 
 
 def get_model(args):
-    model = RnnAtt(args.embed_dim, args.rnn_hidden_dim, args.text_len,
-                   _n_classes, model=args.rnn_model, bidir=args.bidirectional,
-                   atten=args.rnn_attention, cuda=args.cuda)
+    if args.model == 'gru' or args.model == 'lstm':
+        model = RnnAtt(args.embed_dim, args.rnn_hidden_dim,
+                       args.text_len, _n_classes, model=args.model,
+                       bidir=args.bidirectional, atten=args.rnn_attention,
+                       cuda=args.cuda)
+    elif args.model == 'simple':
+        model = SimpleAtt(args.embed_dim, args.text_len, _n_classes,
+                          cuda=args.cuda)
+    else:
+        raise ValueError
 
-    model_path = os.path.join(_model_path, args.rnn_model+'/')
+    model_path = os.path.join(_model_path, args.model+'/')
     os.makedirs(model_path, exist_ok=True)
 
     lossf = nn.BCEWithLogitsLoss()
@@ -184,7 +193,7 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
 
 
 def train(args):
-    LOG.info('Training model: {}'.format(args.rnn_model))
+    LOG.info('Training model: {}'.format(args.model))
 
     auc_lst = []
     loader = ToxicTrainLoader(args.batch_size, args.cv, 4)()
