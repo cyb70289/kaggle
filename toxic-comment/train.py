@@ -11,7 +11,7 @@ from torch.autograd import Variable
 from models.rnn_att import RnnAtt
 from models.simple import SimpleAtt
 import utils
-from utils import ToxicTrainLoader, LRSchedNone
+from utils import ToxicTrainLoader, LRSchedNone, LRSchedDecay
 import preprocess
 
 
@@ -82,7 +82,10 @@ def get_model(args):
 
     lossf = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.param_options(), weight_decay=args.l2)
-    lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
+    if args.model == 'gru' or args.model == 'lstm':
+        lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
+    elif args.model == 'simple':
+        lrsched = LRSchedDecay(optimizer.param_groups, 1e-2, 0.9, 1e-3)
 
     if args.cuda:
         model.cuda()
