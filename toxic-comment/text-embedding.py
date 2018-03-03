@@ -1,6 +1,4 @@
 # Thanks to https://github.com/PavelOstyakov/toxic
-import re
-import string
 import numpy as np
 import pandas as pd
 import nltk
@@ -11,24 +9,14 @@ sentence_length = 256
 
 
 def tokenize_sentences(sentences, word_to_token):
-    # preserve '
-    punct = string.punctuation.replace('\'', '')
-    regex_punct = re.compile('[%s]' % re.escape(punct))
-    regex_alpha = re.compile('[a-zA-Z]')
-
     tokenized_sentences = []
     for sentence in tqdm.tqdm(sentences):
         if hasattr(sentence, "decode"):
             sentence = sentence.decode("utf-8")
-        # punctuation to space, alpha to lower case
-        sentence = regex_punct.sub(' ', sentence)
         words = nltk.tokenize.word_tokenize(sentence)
         result = []
         for word in words:
-            # drop non english word
-            alpha_len = len(regex_alpha.findall(word))
-            if alpha_len*3 < len(word):
-                continue
+            word = word.lower()
             if word not in word_to_token:
                 word_to_token[word] = len(word_to_token)
             token = word_to_token[word]
