@@ -1,4 +1,5 @@
 # Thanks to https://github.com/PavelOstyakov/toxic
+import sys
 import numpy as np
 import pandas as pd
 import nltk
@@ -64,8 +65,13 @@ def token_to_embedding(tokenized_sentences, token_to_word,
     return words_train
 
 
+train_csv = 'dataset/train.csv'
+if len(sys.argv) > 1:
+    train_csv = sys.argv[1]
+print('Train file: {}'.format(train_csv))
+
 print('Tokenizing train set...')
-df = pd.read_csv('dataset/train.csv')
+df = pd.read_csv(train_csv)
 list_sentences = df['comment_text'].fillna('').values
 tokenized_sentences_train, word_to_token = tokenize_sentences(list_sentences,
                                                               {})
