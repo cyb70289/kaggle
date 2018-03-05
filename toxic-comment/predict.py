@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 from models.rnn_att import RnnAtt
-from models.simple import SimpleAtt
+from models.attention import SimpleAtt, SelfAtt
 import utils
 from utils import ToxicTestLoader
 import preprocess
@@ -35,7 +35,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch-size', type=int, default=1024)
     parser.add_argument('--model', default='gru',
-                        choices= ['gru', 'lstm', 'simple'])
+                        choices= ['gru', 'lstm', 'simple', 'selfatt'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
     parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
@@ -84,6 +84,9 @@ def get_model(args):
     elif args.model == 'simple':
         model = SimpleAtt(args.embed_dim, args.text_len, _n_classes,
                           cuda=args.cuda)
+    elif args.model == 'selfatt':
+        model = SelfAtt(args.embed_dim, args.text_len, _n_classes,
+                        cuda=args.cuda)
     else:
         raise ValueError
 

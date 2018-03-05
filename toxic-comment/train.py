@@ -9,7 +9,7 @@ from torch import nn, optim
 from torch.autograd import Variable
 
 from models.rnn_att import RnnAtt
-from models.simple import SimpleAtt
+from models.attention import SimpleAtt, SelfAtt
 import utils
 from utils import ToxicTrainLoader, LRSchedNone, LRSchedDecay
 import preprocess
@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument('--l2', type=float, default=0.0, help='weight decay')
     parser.add_argument('--cv', action='store_true')
     parser.add_argument('--model', default='gru',
-                        choices= ['gru', 'lstm', 'simple'])
+                        choices= ['gru', 'lstm', 'simple', 'selfatt'])
     parser.add_argument('--rnn-hidden-dim', type=int, default=512)
     parser.add_argument('--rnn-attention', action='store_true')
     parser.add_argument('--text-len', type=int, default=128)
@@ -74,6 +74,9 @@ def get_model(args):
     elif args.model == 'simple':
         model = SimpleAtt(args.embed_dim, args.text_len, _n_classes,
                           cuda=args.cuda)
+    elif args.model == 'selfatt':
+        model = SelfAtt(args.embed_dim, args.text_len, _n_classes,
+                        cuda=args.cuda)
     else:
         raise ValueError
 
@@ -86,6 +89,8 @@ def get_model(args):
         lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
     elif args.model == 'simple':
         lrsched = LRSchedDecay(optimizer.param_groups, 1e-2, 0.9, 1e-3)
+    elif args.model == 'selfatt':
+        lrsched = LRSchedNone(optimizer.param_groups, 1e-3)
 
     if args.cuda:
         model.cuda()
