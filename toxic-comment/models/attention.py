@@ -46,6 +46,7 @@ class SelfAtt(nn.Module):
 
     def forward(self, text, X):
         # text: batch * sequence * embed_dim
+        text = F.dropout(text, 0.1)
         atten = torch.matmul(text, self.query_weights)
         atten = F.softmax(atten, dim=1)
         # atten: batch * sequence * query_dim
