@@ -4,3 +4,5 @@
 * CNN, DenseNet, PyTorch
 
 ### [Toxic Comment Classification Challenge](https://www.kaggle.com/c/jigsaw-toxic-comment-classification-challenge)
+
+* NLP, GRU, LSTM, attention, PyTorch
