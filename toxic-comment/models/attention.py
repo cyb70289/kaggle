@@ -39,16 +39,29 @@ class SelfAtt(nn.Module):
         query_dim = kwargs.get('query_dim', 8)
         fc_dim = kwargs.get('fc_dim', 1024)
 
+        self.pe = self.get_position_encoding(text_len, embed_dim)
         self.query_weights = nn.Parameter(torch.zeros(embed_dim, query_dim))
-        if cuda:
-            self.query_weights.cuda(async=True)
         self.fc1 = nn.Linear(query_dim*embed_dim, fc_dim)
         self.fc2 = nn.Linear(fc_dim, n_classes)
+        if cuda:
+            self.query_weights.cuda(async=True)
+            self.pe.cuda(async=True)
+
+    def get_position_encoding(self, text_len, embed_dim):
+        pe = np.empty((text_len, embed_dim), dtype=np.float32)
+        ieven = np.arange(0, embed_dim, 2)
+        iodd = np.arange(1, embed_dim, 2)
+        for pos in range(text_len):
+            pe[pos, ieven] = np.sin(pos / np.power(10000, ieven/embed_dim))
+            pe[pos, iodd] = np.cos(pos / np.power(10000, (iodd-1)/embed_dim))
+        pe = pe[None, ...]
+        return Variable(torch.from_numpy(pe), requires_grad=False)
 
     def forward(self, text, X):
         # text: batch * sequence * embed_dim
-        # text = F.dropout(text, 0.1)
-        atten = torch.matmul(text, self.query_weights)
+        atten = text + self.pe
+        # atten = F.dropout(atten, 0.2)
+        atten = torch.matmul(atten, self.query_weights)
         atten = F.softmax(atten, dim=1)
         # atten: batch * sequence * query_dim
         atten = atten.transpose(1, 2)
