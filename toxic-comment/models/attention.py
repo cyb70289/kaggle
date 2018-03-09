@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -35,7 +36,7 @@ class SelfAtt(nn.Module):
     def __init__(self, embed_dim, text_len, n_classes, **kwargs):
         super(SelfAtt, self).__init__()
         cuda = kwargs.get('cuda', False)
-        query_dim = kwargs.get('query_dim', 32)
+        query_dim = kwargs.get('query_dim', 8)
         fc_dim = kwargs.get('fc_dim', 1024)
 
         self.query_weights = nn.Parameter(torch.zeros(embed_dim, query_dim))
@@ -46,7 +47,7 @@ class SelfAtt(nn.Module):
 
     def forward(self, text, X):
         # text: batch * sequence * embed_dim
-        text = F.dropout(text, 0.1)
+        # text = F.dropout(text, 0.1)
         atten = torch.matmul(text, self.query_weights)
         atten = F.softmax(atten, dim=1)
         # atten: batch * sequence * query_dim
@@ -65,3 +66,16 @@ class SelfAtt(nn.Module):
 
     def param_options(self):
         return self.parameters()
+
+    def reg_loss(self):
+        # normalize column vectors
+        l2sum = (self.query_weights ** 2).sum(dim=0, keepdim=True)
+        weights = self.query_weights / (torch.sqrt(l2sum + 1e-16))
+        # f2_mtx[i, j] = col_i .dot. col_j
+        f2_mtx = torch.mm(weights.transpose(0, 1), weights)
+        # clear trace
+        idx = np.arange(f2_mtx.size(0))
+        f2_mtx[idx, idx] = 0
+        # return regularization loss
+        loss = (f2_mtx ** 2).sum()
+        return 0.001 * loss

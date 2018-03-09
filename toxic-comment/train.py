@@ -137,6 +137,11 @@ def train_epoch(args, model, lossf, optimizer, train_loader, valid_loader,
         predict = model(text, X)
         output = lossf(predict, y)
 
+        # Customize regularization
+        reg = getattr(model, 'reg_loss', None)
+        if callable(reg):
+            output += model.reg_loss()
+
         # Backward
         output.backward()
         optimizer.step()
