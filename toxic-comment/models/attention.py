@@ -36,7 +36,7 @@ class SelfAtt(nn.Module):
     def __init__(self, embed_dim, text_len, n_classes, **kwargs):
         super(SelfAtt, self).__init__()
         cuda = kwargs.get('cuda', False)
-        query_dim = kwargs.get('query_dim', 8)
+        query_dim = kwargs.get('query_dim', 6)
         fc_dim = kwargs.get('fc_dim', 1024)
 
         self.pe = self.get_position_encoding(text_len, embed_dim)
@@ -44,8 +44,8 @@ class SelfAtt(nn.Module):
         self.fc1 = nn.Linear(query_dim*embed_dim, fc_dim)
         self.fc2 = nn.Linear(fc_dim, n_classes)
         if cuda:
-            self.query_weights.cuda(async=True)
-            self.pe.cuda(async=True)
+            self.query_weight = self.query_weights.cuda(async=True)
+            self.pe = self.pe.cuda(async=True)
 
     def get_position_encoding(self, text_len, embed_dim):
         pe = np.empty((text_len, embed_dim), dtype=np.float32)
@@ -60,7 +60,6 @@ class SelfAtt(nn.Module):
     def forward(self, text, X):
         # text: batch * sequence * embed_dim
         atten = text + self.pe
-        # atten = F.dropout(atten, 0.2)
         atten = torch.matmul(atten, self.query_weights)
         atten = F.softmax(atten, dim=1)
         # atten: batch * sequence * query_dim
@@ -72,6 +71,7 @@ class SelfAtt(nn.Module):
         # atten: batch * (query_dim*embed_dim)
         out = self.fc1(atten)
         out = F.relu(out, inplace=True)
+        # out = F.dropout(out, 0.1, training=True)
         # out: batch * fc_dim
         out = self.fc2(out)
         # out: batch * n_classes
@@ -90,5 +90,5 @@ class SelfAtt(nn.Module):
         idx = np.arange(f2_mtx.size(0))
         f2_mtx[idx, idx] = 0
         # return regularization loss
-        loss = (f2_mtx ** 2).sum()
+        loss = (f2_mtx ** 2).mean()
         return 0.001 * loss

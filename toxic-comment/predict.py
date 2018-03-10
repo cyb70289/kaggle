@@ -154,7 +154,7 @@ def predict(args):
         model = get_model(args)
         for model_file in model_files:
             model.load_state_dict(torch.load(model_file))
-            y_pred1 = predict_epoch(args, model, loader, n_samples)
+            y_pred1 = predict1(args, model, loader, n_samples)
             if args.validate:
                 show_validate(y_true, y_pred1)
             y_pred += y_pred1
