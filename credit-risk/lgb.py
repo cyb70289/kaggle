@@ -15,6 +15,34 @@ _test_file = 'dataset/df_test.pkl'
 lgb_seed = 0
 sklearn_seed = None
 
+drop_features = [
+    'FLAG_DOCUMENT_13', 'NAME_FAMILY_STATUS: Separated',
+    'NAME_HOUSING_TYPE: Co-op apartment', 'FLAG_DOCUMENT_14',
+    'REG_REGION_NOT_WORK_REGION', 'LIVE_REGION_NOT_WORK_REGION',
+    'FLAG_DOCUMENT_8', 'REG_REGION_NOT_LIVE_REGION',
+    'NAME_EDUCATION_TYPE: Incomplete higher',
+    'FONDKAPREMONT_MODE: not specified',
+    'FONDKAPREMONT_MODE: reg oper spec account',
+    'AMT_REQ_CREDIT_BUREAU_HOUR', 'FLAG_DOCUMENT_11',
+    'WALLSMATERIAL_MODE: Panel', 'FLAG_DOCUMENT_6', 'FLAG_DOCUMENT_5',
+    'NAME_INCOME_TYPE: State servant',
+    'FONDKAPREMONT_MODE: org spec account', 'FONDKAPREMONT_MODE: na_',
+    'FLAG_EMP_PHONE', 'NAME_HOUSING_TYPE: Office apartment',
+    'HOUSETYPE_MODE: terraced house', 'WALLSMATERIAL_MODE: Stone, brick',
+    'FLAG_DOCUMENT_15', 'WALLSMATERIAL_MODE: Block',
+    'EMERGENCYSTATE_MODE: na_', 'HOUSETYPE_MODE: block of flats',
+    'WALLSMATERIAL_MODE: Others', 'EMERGENCYSTATE_MODE: No',
+    'NAME_HOUSING_TYPE: House / apartment', 'FLAG_CONT_MOBILE',
+    'WALLSMATERIAL_MODE: na_', 'EMERGENCYSTATE_MODE: Yes',
+    'FONDKAPREMONT_MODE: reg oper account', 'HOUSETYPE_MODE: na_',
+    'WALLSMATERIAL_MODE: Monolithic', 'HOUSETYPE_MODE: specific housing',
+    'FLAG_DOCUMENT_9', 'FLAG_DOCUMENT_2', 'FLAG_DOCUMENT_10',
+    'NAME_EDUCATION_TYPE: Secondary / secondary special',
+    'NAME_INCOME_TYPE: Pensioner', 'FLAG_DOCUMENT_12', 'FLAG_DOCUMENT_21',
+    'FLAG_DOCUMENT_4', 'FLAG_DOCUMENT_20', 'FLAG_DOCUMENT_19', 'FLAG_MOBIL',
+    'FLAG_DOCUMENT_7', 'FLAG_DOCUMENT_17',
+]
+
 
 def init_random_seed(seed):
     global lgb_seed, sklearn_seed
@@ -185,6 +213,7 @@ if __name__ == '__main__':
     init_random_seed(args.seed)
 
     df_train = pickle.load(open(_train_file, 'rb'))
+    df_train = df_train.drop(drop_features, axis=1)
     X_train_val = df_train.drop('TARGET', axis=1)
     y_train_val = df_train['TARGET']
     del df_train
