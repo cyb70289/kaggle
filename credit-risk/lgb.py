@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument('--cv-folds', type=int, default=5,
                         help='Cross validation folds')
     parser.add_argument('--seed', type=int, default=1124)
+    parser.add_argument('--importance', action='store_true')
     parser.add_argument('--finetune', type=int, default=0,
                         help='Random search rounds to finetune parameters')
     return parser.parse_args()
@@ -162,6 +163,20 @@ def finetune(args, X_train_val, y_train_val):
 
 def train(args, X_train_val, y_train_val):
     models, _ = _train(args, get_lgb_params(), X_train_val, y_train_val)
+
+    if args.importance:
+        features = X_train_val.columns
+        importance = np.zeros(len(features))
+        for i in range(len(models)):
+            _importance = models[i].feature_importance().astype('float32')
+            importance += _importance / _importance.sum()
+        print('Feature importances:')
+        rank = importance.argsort()[::-1]
+        for i in rank:
+            print('{}:  {:.4f}'.format(features[i], importance[i]))
+        print('\n50 least importance features:')
+        print(features[rank[-50:]])
+
     return models
 
 
