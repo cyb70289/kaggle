@@ -72,16 +72,16 @@ def get_lgb_params():
         'learning_rate': 0.01,
         'seed': lgb_seed,
 
-        'max_depth': 5,
-        'num_leaves': 32,
+        'max_bin': 2048,
+        'num_leaves': 31,
         'min_data_in_leaf': 200,
         'feature_fraction': 0.5,
         'feature_fraction_seed': lgb_seed+1,
-        'bagging_fraction': 0.8,
+        'bagging_fraction': 0.9,
         'bagging_freq': 5,
         'bagging_seed': lgb_seed+2,
-        'lambda_l1': 0.5,
-        'lambda_l2': 0.5,
+        'lambda_l1': 5,
+        'lambda_l2': 30,
 
         'verbosity': -1,
         'metric': ['auc', 'binary_logloss'],
@@ -155,13 +155,13 @@ def finetune(args, X_train_val, y_train_val):
 
     lgb_params = get_lgb_params()
     random_params = {
-        'max_depth': (4, 5, 1),
-        'num_leaves': (16, 32, 1),
-        'min_data_in_leaf': (20, 200, 10),
+        'max_bin': ( 1024, 4096, 256 ),
+        'num_leaves': (16, 32, 2),
+        'min_data_in_leaf': (100, 400, 50),
         'feature_fraction': (0.4, 0.8, 0.05),
-        'bagging_fraction': (0.6, 1.0, 0.05),
-        'lambda_l1': (0.5, 2.0, 0.1),
-        'lambda_l2': (0.5, 2.0, 0.1),
+        'bagging_fraction': (0.8, 1.0, 0.05),
+        'lambda_l1': (1, 8, 1),
+        'lambda_l2': (5, 40, 5),
     }
 
     with open('dataset/finetune.csv', 'w', 1) as f:
