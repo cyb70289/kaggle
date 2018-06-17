@@ -45,11 +45,10 @@ drop_features = [
 
 
 def init_random_seed(seed):
-    global _lgb_seed
-    if seed:
-        np.random.seed(seed)
-        _lgb_seed = seed+100
-        _sklearn_seed = seed+200
+    global _lgb_seed, _sklearn_seed
+    np.random.seed(seed)
+    _sklearn_seed = seed+100
+    _lgb_seed = seed+200
 
 
 def parse_args():
@@ -67,6 +66,9 @@ def parse_args():
     return parser.parse_args()
 
 
+# auc: 0.7793, std: 0.0036, best_iter: 3889
+_best_iter = 3889
+
 def get_lgb_params():
     return {
         'objective': 'binary',
@@ -77,8 +79,10 @@ def get_lgb_params():
         'num_leaves': 31,
         'min_data_in_leaf': 200,
         'feature_fraction': 0.5,
+        'feature_fraction_seed': _lgb_seed+1,
         'bagging_fraction': 0.9,
         'bagging_freq': 5,
+        'bagging_seed': _lgb_seed+2,
         'lambda_l1': 5,
         'lambda_l2': 2,
 
@@ -130,7 +134,7 @@ def _evaluate(args, lgb_params, lgb_data):
     hist = lgb.cv(lgb_params, lgb_data, num_boost_round=args.max_epochs,
                   nfold=args.cv_folds, stratified=True, shuffle=True,
                   early_stopping_rounds=args.early_stop_rounds,
-                  seed=_lgb_seed+1, verbose_eval=_verbose_eval)
+                  seed=_lgb_seed+10, verbose_eval=_verbose_eval)
     max_auc = max(hist['auc-mean'])
     best_iter = hist['auc-mean'].index(max_auc)+1
     stdv = hist['auc-stdv'][best_iter-1]
@@ -159,7 +163,7 @@ def finetune(args, lgb_data):
 
     lgb_params = get_lgb_params()
     random_params = {
-        'max_bin': ( 1024, 4096, 256 ),
+        'max_bin': (1024, 3072, 256),
         'num_leaves': (16, 32, 2),
         'min_data_in_leaf': (100, 500, 50),
         'feature_fraction': (0.3, 0.8, 0.05),
