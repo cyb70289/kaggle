@@ -5,15 +5,15 @@ import pickle
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
-from sklearn.metrics import log_loss, roc_auc_score
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 
 
 _train_file = 'dataset/df_train.pkl'
 _test_file = 'dataset/df_test.pkl'
-
-lgb_seed = 0
-sklearn_seed = None
+_verbose_eval = 100
+_lgb_seed = 0
+_sklearn_seed = None
 
 drop_features = [
     'FLAG_DOCUMENT_13', 'NAME_FAMILY_STATUS: Separated',
@@ -45,24 +45,25 @@ drop_features = [
 
 
 def init_random_seed(seed):
-    global lgb_seed, sklearn_seed
+    global _lgb_seed
     if seed:
         np.random.seed(seed)
-        sklearn_seed = seed+100
-        lgb_seed = seed+200
+        _lgb_seed = seed+100
+        _sklearn_seed = seed+200
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--max-epochs', type=int, default=9999)
-    parser.add_argument('--stop-count', type=int, default=333,
-                        help='Early stop count')
-    parser.add_argument('--cv-folds', type=int, default=5,
-                        help='Cross validation folds')
+    parser.add_argument('--early-stop-rounds', type=int, default=333)
+    parser.add_argument('--cv-folds', type=int, default=5)
     parser.add_argument('--seed', type=int, default=1124)
-    parser.add_argument('--importance', action='store_true')
-    parser.add_argument('--finetune', type=int, default=0,
+    parser.add_argument('--eval', action='store_true',
+                        help='Evaluate default parameters')
+    parser.add_argument('--tune', type=int, default=0,
                         help='Random search rounds to finetune parameters')
+    parser.add_argument('--importance', action='store_true',
+                        help='Show feature importances')
     return parser.parse_args()
 
 
@@ -70,29 +71,29 @@ def get_lgb_params():
     return {
         'objective': 'binary',
         'learning_rate': 0.01,
-        'seed': lgb_seed,
+        'seed': _lgb_seed,
 
         'max_bin': 2048,
         'num_leaves': 31,
         'min_data_in_leaf': 200,
         'feature_fraction': 0.5,
-        'feature_fraction_seed': lgb_seed+1,
         'bagging_fraction': 0.9,
         'bagging_freq': 5,
-        'bagging_seed': lgb_seed+2,
         'lambda_l1': 5,
         'lambda_l2': 2,
 
         'verbosity': -1,
-        'metric': ['auc', 'binary_logloss'],
+        'metric': 'auc',
     }
 
 
-def _train(args, lgb_params, X_train_val, y_train_val):
-    models = []
+def train(args, X_train_val, y_train_val):
     y_predict = np.zeros(X_train_val.shape[0])
     kf = StratifiedKFold(n_splits=args.cv_folds, shuffle=True,
-                         random_state=sklearn_seed)
+                         random_state=_sklearn_seed)
+    if args.importance:
+        features = X_train_val.columns
+        importance = np.zeros(len(features))
 
     for train_index, val_index in kf.split(X_train_val, y_train_val):
         X_train, X_val = \
@@ -102,44 +103,51 @@ def _train(args, lgb_params, X_train_val, y_train_val):
         lgb_train = lgb.Dataset(X_train, y_train)
         lgb_val = lgb.Dataset(X_val, y_val, reference=lgb_train)
         print('---------------------------------------------------------')
-        model = lgb.train(lgb_params, lgb_train,
-                          num_boost_round=args.max_epochs,
+        model = lgb.train(get_lgb_params(), lgb_train, args.max_epochs,
                           valid_sets=[lgb_train, lgb_val],
                           valid_names=['train', 'val'],
-                          early_stopping_rounds=args.stop_count,
-                          verbose_eval=200)
+                          early_stopping_rounds=args.early_stop_rounds,
+                          verbose_eval=_verbose_eval)
         y_predict[val_index] = model.predict(
             X_val, num_iteration=model.best_iteration)
-        models.append(model)
+        if args.importance:
+            _importance = model.feature_importance().astype('float32')
+            importance += _importance / _importance.sum()
 
-    logloss = log_loss(y_train_val, y_predict)
-    auc = roc_auc_score(y_train_val, y_predict)
     print('\n==========================================================')
-    print('logloss: {:.4f}, auc: {:.4f}'.format(logloss, auc))
+    print('auc: {:.4f}'.format(roc_auc_score(y_train_val, y_predict)))
 
-    return models, (logloss, auc)
+    if args.importance:
+        print('\nFeature importances:')
+        rank = importance.argsort()[::-1]
+        for i in rank:
+            print('{}:  {:.4f}'.format(features[i], importance[i]))
+        print('\n50 least importance features:')
+        print(features[rank[-50:]])
 
 
-def finetune(args, X_train_val, y_train_val):
-    def tune(lgb_params, random_params, params, randsteps_lst):
-        while True:
-            randsteps = []
-            for k in params:
-                v = random_params[k]
-                gap, step = v[1]-v[0], v[2]
-                randstep = random.randint(0, round(gap/step))
-                lgb_params[k] = v[0] + randstep*step
-                randsteps.append(randstep)
-            for _randsteps in randsteps_lst:
-                if _randsteps == randsteps:
-                    break
-            else:
-                randsteps_lst.append(randsteps)
-                break
+def _evaluate(args, lgb_params, lgb_data):
+    hist = lgb.cv(lgb_params, lgb_data, num_boost_round=args.max_epochs,
+                  nfold=args.cv_folds, stratified=True, shuffle=True,
+                  early_stopping_rounds=args.early_stop_rounds,
+                  seed=_lgb_seed+1, verbose_eval=_verbose_eval)
+    max_auc = max(hist['auc-mean'])
+    best_iter = hist['auc-mean'].index(max_auc)+1
+    stdv = hist['auc-stdv'][best_iter-1]
+    print('--------------------------------------------------')
+    print('auc: {:.4f}, std: {:.4f}, best_iter: {}'.format(max_auc, stdv,
+                                                           best_iter))
+    return max_auc, stdv, best_iter
+
+
+def finetune(args, lgb_data):
+    def tune(lgb_params, random_params, param_names):
         s = ''
-        for k in params:
+        for k in param_names:
+            startv, endv, step = random_params[k]
+            randstep = random.randint(0, round((endv-startv)/step))
+            lgb_params[k] = v = startv + randstep*step
             s = s + k + ':'
-            v = lgb_params[k]
             s += '{}'.format(v) if type(v) == int else '{:.2f}'.format(v)
             s += ', '
         print(s)
@@ -149,63 +157,38 @@ def finetune(args, X_train_val, y_train_val):
 
     random.seed(None)
 
-    best_logloss = 999.0
-    best_auc = 0.0
-    randsteps_lst = []
-
     lgb_params = get_lgb_params()
     random_params = {
         'max_bin': ( 1024, 4096, 256 ),
-        'num_leaves': (15, 47, 2),
+        'num_leaves': (16, 32, 2),
         'min_data_in_leaf': (100, 500, 50),
         'feature_fraction': (0.3, 0.8, 0.05),
         'bagging_fraction': (0.8, 1.0, 0.05),
         'lambda_l1': (1, 8, 1),
-        'lambda_l2': (2, 30, 2),
+        'lambda_l2': (2, 30, 4),
     }
 
     with open('dataset/finetune.csv', 'w', 1) as f:
-        params = sorted(list(random_params.keys()))
-        f.write(','.join(params))
-        f.write(',logloss,auc\n')
-        for i in range(args.finetune):
-            print('Iteration {}/{}'.format(i+1, args.finetune))
-            tune(lgb_params, random_params, params, randsteps_lst)
-            _, (logloss, auc) = _train(args, lgb_params,
-                                       X_train_val, y_train_val)
-            for param in params:
+        param_names = sorted(list(random_params.keys()))
+        f.write(','.join(param_names))
+        f.write(',auc,stdv,best_iter\n')
+        for i in range(args.tune):
+            print('\n==================================================')
+            print('Iteration {}/{}'.format(i+1, args.tune))
+            tune(lgb_params, random_params, param_names)
+            auc, stdv, best_iter = _evaluate(args, lgb_params, lgb_data)
+            for param in param_names:
                 v = lgb_params[param]
                 if type(v) == int:
                     f.write('{},'.format(v))
                 else:
                     f.write('{:.2f},'.format(v))
-            f.write('{:.4f},{:.4f}\n'.format(logloss, auc))
+            f.write('{:.4f},{:.4f},{}\n'.format(auc, stdv, best_iter))
             os.fsync(f.fileno())
-            if logloss < best_logloss:
-                best_logloss = logloss
-            if best_auc < auc:
-                best_auc = auc
-            print('Best logloss: {:.4f}, best auc: {:.4f}'.format(
-                best_logloss, best_auc))
 
 
-def train(args, X_train_val, y_train_val):
-    models, _ = _train(args, get_lgb_params(), X_train_val, y_train_val)
-
-    if args.importance:
-        features = X_train_val.columns
-        importance = np.zeros(len(features))
-        for i in range(len(models)):
-            _importance = models[i].feature_importance().astype('float32')
-            importance += _importance / _importance.sum()
-        print('Feature importances:')
-        rank = importance.argsort()[::-1]
-        for i in rank:
-            print('{}:  {:.4f}'.format(features[i], importance[i]))
-        print('\n50 least importance features:')
-        print(features[rank[-50:]])
-
-    return models
+def evaluate(args, lgb_data):
+    _evaluate(args, get_lgb_params(), lgb_data)
 
 
 if __name__ == '__main__':
@@ -216,9 +199,16 @@ if __name__ == '__main__':
     df_train = df_train.drop(drop_features, axis=1)
     X_train_val = df_train.drop('TARGET', axis=1)
     y_train_val = df_train['TARGET']
+    lgb_data = lgb.Dataset(X_train_val, y_train_val)
     del df_train
 
-    if args.finetune:
-        finetune(args, X_train_val, y_train_val)
+    if args.importance:
+        args.tune = 0
+        args.eval = False
+
+    if args.tune > 0:
+        finetune(args, lgb_data)
+    elif args.eval:
+        evaluate(args, lgb_data)
     else:
         train(args, X_train_val, y_train_val)
